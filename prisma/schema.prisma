@@ -1,0 +1,786 @@
+// Kharazmi Bandar-e-Imam Company - Integrated Management & Monitoring System
+// Based on back.json + db.json specifications
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================
+// MODULE 01 - WBS (Work Breakdown Structure) — Core
+// ============================================================
+
+model WBS {
+  id              String   @id @default(cuid())
+  wbsCode         String   @unique
+  title           String
+  parentId        String?
+  parent          WBS?     @relation("WBSHierarchy", fields: [parentId], references: [id], onDelete: Cascade)
+  children        WBS[]    @relation("WBSHierarchy")
+  level           Int      @default(1)
+  hierarchyPath   String   @default("")
+  durationDays    Int      @default(0)
+  progressPlan    Float    @default(0)
+  progressActual  Float    @default(0)
+  startDate       DateTime?
+  finishDate      DateTime?
+  startDateJalali String?
+  finishDateJalali String?
+  // EVM fields
+  actualCost      Float?
+  costVariance    Float?
+  scheduleVariance Float?
+  hrPlan          String?
+  hrActual        String?
+  dayComplete     Float?
+  // Required org position for this activity (سمت سازمانی مورد نیاز)
+  requiredOrgPositionId String?
+  requiredOrgPosition   OrgChart? @relation("WBSRequiredOrgPosition", fields: [requiredOrgPositionId], references: [id], onDelete: SetNull)
+  // Metadata
+  description     String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  personels       WBSPersonel[]
+  orgPositions    WBSOrgChart[]
+  monthlyProgress WBSMonthlyProgress[]
+  costs           CostBreakdown[]
+  revenues        RevenueBreakdown[]
+  assets          Asset[]
+  kpis            KPI[]
+  risks           Risk[]
+  budgets         BudgetAllocation[]
+  activities      Activity[]
+}
+
+model WBSPersonel {
+  id          String   @id @default(cuid())
+  wbsId       String
+  personelId  String
+  wbs         WBS      @relation(fields: [wbsId], references: [id], onDelete: Cascade)
+  personel    Personel @relation(fields: [personelId], references: [id], onDelete: Cascade)
+  role        String?
+  allocation  Float?
+  createdAt   DateTime @default(now())
+
+  @@unique([wbsId, personelId])
+}
+
+model WBSOrgChart {
+  id          String   @id @default(cuid())
+  wbsId       String
+  orgChartId  String
+  wbs         WBS      @relation(fields: [wbsId], references: [id], onDelete: Cascade)
+  orgChart    OrgChart @relation(fields: [orgChartId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+
+  @@unique([wbsId, orgChartId])
+}
+
+model WBSMonthlyProgress {
+  id          String   @id @default(cuid())
+  wbsId       String
+  monthDate   DateTime
+  plannedPct  Float    @default(0)
+  actualPct   Float?
+  wbs         WBS      @relation(fields: [wbsId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+
+  @@unique([wbsId, monthDate])
+}
+
+// ============================================================
+// MODULE 02 - HR & Org Chart
+// ============================================================
+
+model Personel {
+  id              String   @id @default(cuid())
+  personelId      String   @unique
+  name            String
+  orgChartId      String?
+  orgChart        OrgChart?  @relation(fields: [orgChartId], references: [id], onDelete: SetNull)
+  costBreakdownCode String?
+  phone           String?
+  email           String?
+  role            String   @default("user") // user | moderator | admin
+  gender          String?
+  monthlySalary   Float?
+  annualSalary    Float?
+  monthlySalaryActual Float?
+  annualSalaryActual Float?
+  dailyRate       Float?
+  notes           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  wbsAssignments  WBSPersonel[]
+  kpiAssignments  KPIAssignment[]
+  kpiRecords      KPIRecord[]
+  risksIdentified Risk[]      @relation("RiskIdentifiedBy")
+  riskActions     RiskAction[]
+  riskChanges     RiskHistory[]
+  costBreakdown   CostBreakdown? @relation(fields: [costBreakdownId], references: [id], onDelete: SetNull)
+  costBreakdownId String?
+  orgChartResponsible OrgChart? @relation("OrgChartResponsible")
+  user            User?
+  // Activity management
+  activityAssignments ActivityPerson[]
+  activityStatusUpdates ActivityStatusUpdate[] @relation("ActivityStatusUpdater")
+  // KPI evaluations (as evaluator)
+  kpiEvaluationsDone  KPIEvaluation[] @relation("KPIEvaluatedBy")
+  // KPI evaluations (as the person being evaluated)
+  kpiEvaluations      KPIEvaluation[] @relation("KPIEvaluatedPerson")
+  // Risk evaluations (as evaluator)
+  riskEvaluationsDone RiskEvaluation[] @relation("RiskEvaluatedBy")
+  // Lessons learned (as capturer)
+  lessonsCaptured     LessonLearned[]  @relation("LessonCapturedBy")
+}
+
+model OrgChart {
+  id              String   @id @default(cuid())
+  orgId           String   @unique
+  position        String   // e.g. مدیر عامل
+  level           String   // حکمرانی | مدیریتی | عملیاتی
+  parentId        String?
+  parent          OrgChart?  @relation("OrgChartHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
+  children        OrgChart[] @relation("OrgChartHierarchy")
+  personResponsibleId String? @unique
+  personResponsible Personel? @relation("OrgChartResponsible", fields: [personResponsibleId], references: [id], onDelete: SetNull)
+  costBreakdownCode String?
+  // Link to HR.txt position template (admin can change this mapping)
+  hrPositionId    String?  // refers to KPITemplate.positionCode
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  wbsLinks        WBSOrgChart[]
+  wbsRequiredBy   WBS[]    @relation("WBSRequiredOrgPosition")
+  personels       Personel[]
+  kpis            KPI[]
+  activityAssignments ActivityOrgChart[]
+  kpiEvaluations  KPIEvaluation[]
+}
+
+// ============================================================
+// MODULE 03 - Financial
+// ============================================================
+
+model CostBreakdown {
+  id              String   @id @default(cuid())
+  costId          String   @unique // e.g. c1.1.1
+  rowNumber       String?  // e.g. C1
+  budgetType      String?  // جاری | سرمایه‌ای
+  category        String?  // e.g. حقوق منابع انسانی
+  description     String?  // شرح هزینه
+  theme           String?  // موضوع هزینه
+  initialForecast Float?   // پیش‌بینی اولیه
+  programForecast Float?   // پیش‌بینی برنامه‌ای
+  percentTotal    Float?   // درصد از کل
+  notes           String?
+  wbsId           String?
+  wbs             WBS?     @relation(fields: [wbsId], references: [id], onDelete: SetNull)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  personels       Personel[]
+  budgets         BudgetAllocation[]
+}
+
+model RevenueBreakdown {
+  id              String   @id @default(cuid())
+  revenueId       String   @unique // e.g. I1.1
+  rowNumber       String?  // e.g. I1
+  theme           String?  // موضوع درآمد (strategic topic)
+  description     String?  // شرح درآمد
+  title           String?  // عنوان درآمد (محصولات / سامانه / نرم افزار)
+  wbsCode         String?
+  wbsId           String?
+  wbs             WBS?     @relation(fields: [wbsId], references: [id], onDelete: SetNull)
+  initialForecast Float?
+  programForecast Float?
+  ownershipShare  Float?
+  percentTotal    Float?
+  revenueType     String?  // عملیاتی | غیرعملیاتی | بدون درآمد
+  status          String?  // در حال تولید | در انتظار تعریف
+  progressPct     Float?
+  actualRevenue   Float?
+  ev              Float?   // Earned Value
+  trlLevel        Int?     // Technology Readiness Level
+  assetId         String?
+  asset           Asset?   @relation("AssetRevenues", fields: [assetId], references: [id], onDelete: SetNull)
+  notes           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model BudgetAllocation {
+  id              String   @id @default(cuid())
+  wbsId           String?
+  wbs             WBS?     @relation(fields: [wbsId], references: [id], onDelete: SetNull)
+  costBreakdownId String?
+  costBreakdown   CostBreakdown? @relation(fields: [costBreakdownId], references: [id], onDelete: SetNull)
+  fiscalYear      String?
+  plannedAmount   Float?
+  actualAmount    Float?
+  variance        Float?
+  notes           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+// ============================================================
+// MODULE 04 - Assets & Executors
+// ============================================================
+
+model Executor {
+  id              String   @id @default(cuid())
+  code            String   @unique
+  name            String   // نام شرکت یا پیمانکار
+  type            String?  // شخص حقیقی | شرکت | پیمانکار
+  nationalId      String?  // شناسه ملی / کد ملی
+  phone           String?
+  email           String?
+  address         String?
+  contactPerson   String?
+  description     String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  assets          Asset[]
+}
+
+model Asset {
+  id              String   @id @default(cuid())
+  assetId         String   @unique // e.g. p3.1
+  title           String
+  category        String?
+  description     String?
+  status          String?  // فعال | در حال توسعه | غیرفعال
+  assetType       String?
+  wbsId           String?
+  wbs             WBS?     @relation(fields: [wbsId], references: [id], onDelete: SetNull)
+  executorId      String?
+  executor        Executor? @relation(fields: [executorId], references: [id], onDelete: SetNull)
+  purchaseDate    DateTime?
+  initialValue    Float?
+  actualValue     Float?   // ارزش واقعی دارایی (برای محاسبه درآمد واقعی)
+  currentValue    Float?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  evaluations     AssetEvaluation[]
+  risks            Risk[]
+  revenues        RevenueBreakdown[] @relation("AssetRevenues")
+  activities      Activity[]
+}
+
+model AssetEvaluation {
+  id              String   @id @default(cuid())
+  assetId         String
+  asset           Asset    @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  evaluationDate  DateTime @default(now())
+  evaluator       String?
+  technicalScore  Float?
+  businessScore   Float?
+  overallScore    Float?
+  comments        String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+// ============================================================
+// MODULE 05 - KPI
+// ============================================================
+
+model KPI {
+  id              String   @id @default(cuid())
+  code            String   @unique
+  title           String
+  description     String?
+  category        String?
+  weight          Float    @default(1.0)
+  targetValue     Float?
+  unit            String?
+  frequency       String?  // ماهانه | فصلی | سالانه
+  orgChartId      String?
+  orgChart        OrgChart? @relation(fields: [orgChartId], references: [id], onDelete: SetNull)
+  wbsId           String?
+  wbs             WBS?     @relation(fields: [wbsId], references: [id], onDelete: SetNull)
+  status          String   @default("active")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  assignments     KPIAssignment[]
+}
+
+model KPIAssignment {
+  id              String   @id @default(cuid())
+  kpiId           String
+  kpi             KPI      @relation(fields: [kpiId], references: [id], onDelete: Cascade)
+  personelId      String
+  personel        Personel @relation(fields: [personelId], references: [id], onDelete: Cascade)
+  status          String   @default("active") // active | completed | suspended
+  startDate       DateTime?
+  endDate         DateTime?
+  notes           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  records         KPIRecord[]
+
+  @@unique([kpiId, personelId])
+}
+
+model KPIRecord {
+  id              String   @id @default(cuid())
+  assignmentId    String
+  assignment      KPIAssignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  recordDate      DateTime @default(now())
+  value           Float
+  notes           String?
+  confirmedById   String?
+  confirmedBy     Personel? @relation(fields: [confirmedById], references: [id], onDelete: SetNull)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+// ============================================================
+// MODULE 06 - Risk
+// ============================================================
+
+model Risk {
+  id              String   @id @default(cuid())
+  code            String   @unique
+  title           String
+  description     String?
+  category        String?
+  status          String   @default("open") // open | mitigated | closed
+  probability     Int?     // 1-5
+  impact          Int?     // 1-5
+  severity        Int?     // probability * impact
+  riskType        String?  // operational | financial | strategic | technical
+  wbsId           String?
+  wbs             WBS?     @relation(fields: [wbsId], references: [id], onDelete: SetNull)
+  assetId         String?
+  asset           Asset?   @relation(fields: [assetId], references: [id], onDelete: SetNull)
+  identifiedById  String?
+  identifiedBy    Personel? @relation("RiskIdentifiedBy", fields: [identifiedById], references: [id], onDelete: SetNull)
+  identifiedDate  DateTime @default(now())
+  dueDate         DateTime?
+  resolutionDate  DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  actions         RiskAction[]
+  history         RiskHistory[]
+  evaluations     RiskEvaluation[]
+  lessons         LessonLearned[]
+}
+
+model RiskAction {
+  id              String   @id @default(cuid())
+  riskId          String
+  risk            Risk     @relation(fields: [riskId], references: [id], onDelete: Cascade)
+  title           String
+  description     String?
+  status          String   @default("pending") // pending | in_progress | completed
+  assignedToId    String?
+  assignedTo      Personel? @relation(fields: [assignedToId], references: [id], onDelete: SetNull)
+  dueDate         DateTime?
+  completedDate   DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model RiskHistory {
+  id              String   @id @default(cuid())
+  riskId          String
+  risk            Risk     @relation(fields: [riskId], references: [id], onDelete: Cascade)
+  changeDate      DateTime @default(now())
+  changeType      String?  // status_change | severity_change | description_update
+  oldValue        String?
+  newValue        String?
+  changedById     String?
+  changedBy       Personel? @relation(fields: [changedById], references: [id], onDelete: SetNull)
+  notes           String?
+  createdAt       DateTime @default(now())
+}
+
+// ============================================================
+// MODULE 07 - Notification (was missing in back.json)
+// ============================================================
+
+model NotificationTemplate {
+  id              String   @id @default(cuid())
+  code            String   @unique
+  title           String
+  subjectTemplate String?
+  bodyTemplate    String
+  category        String?  // system | risk | kpi | wbs | financial
+  variables       String?  // JSON-serialized list of variable names
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  notifications   Notification[]
+}
+
+model Notification {
+  id              String   @id @default(cuid())
+  templateId      String?
+  template        NotificationTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  userId          String?
+  title           String
+  message         String
+  category        String?
+  priority        String   @default("normal") // low | normal | high | urgent
+  isRead          Boolean  @default(false)
+  readAt          DateTime?
+  actionUrl       String?
+  metadata        String?  // JSON
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model NotificationConfig {
+  id              String   @id @default(cuid())
+  userId          String?
+  category        String
+  channel         String   // email | sms | in_app
+  isEnabled       Boolean  @default(true)
+  minPriority     String   @default("normal")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+// ============================================================
+// MODULE 08 - Charts
+// ============================================================
+
+model ChartConfig {
+  id              String   @id @default(cuid())
+  code            String   @unique
+  title           String
+  chartType       String?  // s_curve | bar | line | pie | heatmap
+  dataSource      String?  // wbs | financial | risk | kpi
+  config          String?  // JSON: filters, groupBy, etc.
+  description     String?
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model ChartCache {
+  id              String   @id @default(cuid())
+  chartConfigId   String?
+  cacheKey        String   @unique
+  data            String   // JSON-serialized
+  expiresAt       DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+// ============================================================
+// MODULE 09 - Dashboard
+// ============================================================
+
+model DashboardWidget {
+  id              String   @id @default(cuid())
+  code            String   @unique
+  title           String
+  widgetType      String?  // stat | chart | table | alert
+  dataSource      String?
+  config          String?  // JSON
+  description     String?
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model DashboardConfig {
+  id              String   @id @default(cuid())
+  userId          String   @unique
+  layout          String?  // JSON: widget positions
+  settings        String?  // JSON
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model DashboardAlert {
+  id              String   @id @default(cuid())
+  title           String
+  description     String?
+  alertType       String?  // info | warning | error | success
+  severity        String   @default("normal") // low | normal | high | critical
+  source          String?  // wbs | risk | kpi | financial
+  sourceId        String?
+  isActive        Boolean  @default(true)
+  acknowledgedAt  DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+// ============================================================
+// MODULE 10 - Settings, Users & Roles
+// ============================================================
+
+model Role {
+  id              String   @id @default(cuid())
+  name            String   @unique
+  description     String?
+  permissions     String?  // JSON-serialized permissions list
+  isSystem        Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  users           User[]
+}
+
+model User {
+  id              String   @id @default(cuid())
+  username        String   @unique
+  email           String?  @unique
+  passwordHash    String
+  personelId      String?  @unique
+  personel        Personel? @relation(fields: [personelId], references: [id], onDelete: SetNull)
+  roleId          String?
+  role            Role?    @relation(fields: [roleId], references: [id], onDelete: SetNull)
+  isActive        Boolean  @default(true)
+  lastLoginAt     DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  logs            UserLog[]
+}
+
+model SystemConfig {
+  id              String   @id @default(cuid())
+  key             String   @unique
+  value           String?
+  description     String?
+  category        String?
+  isEditable      Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model UserLog {
+  id              String   @id @default(cuid())
+  userId          String?
+  user            User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action          String
+  description     String?
+  ipAddress       String?
+  userAgent       String?
+  metadata        String?  // JSON
+  createdAt       DateTime @default(now())
+}
+
+// ============================================================
+// MODULE 11 - HR Position Templates (from HR.txt)
+// ============================================================
+
+model KPITemplate {
+  id              String   @id @default(cuid())
+  positionCode    String   @unique  // e.g. "1", "2", ... (from HR.txt)
+  positionName    String   // e.g. "مدیر عامل"
+  description     String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  categories      KPICategory[]
+  evaluations     KPIEvaluation[]
+}
+
+model KPICategory {
+  id              String   @id @default(cuid())
+  templateId      String
+  template        KPITemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  name            String   // e.g. "شاخص های راهبردی"
+  order           Int      @default(0)
+  createdAt       DateTime @default(now())
+
+  indicators      KPIIndicator[]
+}
+
+model KPIIndicator {
+  id              String   @id @default(cuid())
+  categoryId      String
+  category        KPICategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  name            String   // e.g. "درصد تحقق اهداف استراتژیک"
+  description     String?
+  weight          Float    @default(1.0)
+  targetValue     Float?
+  unit            String?
+  order           Int      @default(0)
+  createdAt       DateTime @default(now())
+
+  records         KPIEvaluationRecord[]
+}
+
+// Periodic evaluation of a position (done by moderator)
+model KPIEvaluation {
+  id              String   @id @default(cuid())
+  templateId      String
+  template        KPITemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  personelId      String?
+  personel        Personel? @relation("KPIEvaluatedPerson", fields: [personelId], references: [id], onDelete: SetNull)
+  orgChartId      String?
+  orgChart        OrgChart? @relation(fields: [orgChartId], references: [id], onDelete: SetNull)
+  period          String   // e.g. "1405-Q1", "1405-07"
+  periodType      String   @default("monthly") // monthly | quarterly | annual
+  status          String   @default("draft") // draft | submitted | approved
+  totalScore      Float?
+  maxScore        Float?
+  percentageScore Float?
+  notes           String?
+  evaluatedById   String?
+  evaluatedBy     Personel? @relation("KPIEvaluatedBy", fields: [evaluatedById], references: [id], onDelete: SetNull)
+  evaluatedAt     DateTime @default(now())
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  records         KPIEvaluationRecord[]
+}
+
+model KPIEvaluationRecord {
+  id              String   @id @default(cuid())
+  evaluationId    String
+  evaluation      KPIEvaluation @relation(fields: [evaluationId], references: [id], onDelete: Cascade)
+  indicatorId     String
+  indicator       KPIIndicator @relation(fields: [indicatorId], references: [id], onDelete: Cascade)
+  value           Float    // actual achieved value
+  targetValue     Float?   // snapshot of target at evaluation time
+  score           Float?   // normalized 0-100 score
+  weight          Float?   // snapshot of weight
+  notes           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+// ============================================================
+// MODULE 12 - Risk Evaluation (periodic assessments from Risk.xlsx)
+// ============================================================
+
+model RiskEvaluation {
+  id              String   @id @default(cuid())
+  riskId          String
+  risk            Risk     @relation(fields: [riskId], references: [id], onDelete: Cascade)
+  period          String   // e.g. "1405-07"
+  periodType      String   @default("monthly")
+  // Current state (سنجش ریسک - فعلی)
+  impactCurrent   String?  // اساسی | عمده | متوسط | جزئی | ناچیز
+  probabilityCurrent String? // نادر | بعید | ممکن | محتمل | مکرر
+  levelCurrent    String?  // Low | Medium | High | Critical (computed from heat map)
+  // Target state (سنجش ریسک - هدف)
+  impactTarget    String?
+  probabilityTarget String?
+  levelTarget     String?
+  // Response strategy
+  response        String?  // اجتناب | انتقال | کاهش | پذیرش | بهره برداری | اشتراک گذاری | افزایش/تقویت
+  // Impact on objectives: منفی | مثبت
+  impactType      String   @default("منفی")
+  physicalProgress Float?  // پیشرفت فیزیکی 0-1
+  notes           String?
+  evaluatedById   String?
+  evaluatedBy     Personel? @relation("RiskEvaluatedBy", fields: [evaluatedById], references: [id], onDelete: SetNull)
+  evaluatedAt     DateTime @default(now())
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+// Lessons learned log
+model LessonLearned {
+  id              String   @id @default(cuid())
+  riskId          String?
+  risk            Risk?    @relation(fields: [riskId], references: [id], onDelete: SetNull)
+  title           String
+  description     String
+  category        String?  // ریسک | فرصت | عملیات | استراتژی
+  impact          String?  // مثبت | منفی
+  recommendations String?
+  capturedById    String?
+  capturedBy      Personel? @relation("LessonCapturedBy", fields: [capturedById], references: [id], onDelete: SetNull)
+  capturedAt      DateTime @default(now())
+  isArchived      Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+// ============================================================
+// MODULE 13 - Activity Management (مدیریت فعالیت‌های جاری)
+// ============================================================
+
+model Activity {
+  id              String   @id @default(cuid())
+  code            String   @unique
+  title           String
+  description     String?
+  // Link to asset (each activity is in service of an asset)
+  assetId         String?
+  asset           Asset?   @relation(fields: [assetId], references: [id], onDelete: SetNull)
+  wbsId           String?
+  wbs             WBS?     @relation(fields: [wbsId], references: [id], onDelete: SetNull)
+  // Scheduling
+  startDate       DateTime?
+  endDate         DateTime?
+  durationDays    Int?
+  urgency         String   @default("normal") // low | normal | high | urgent
+  priority        Int      @default(3) // 1-5
+  // Status tracking
+  status          String   @default("pending") // pending | in_progress | completed | cancelled | on_hold
+  progressPct     Float    @default(0)
+  // Tracking
+  createdById     String?
+  notes           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  personAssignments ActivityPerson[]
+  orgAssignments    ActivityOrgChart[]
+  statusUpdates     ActivityStatusUpdate[]
+}
+
+// Multiple persons can be assigned to an activity
+model ActivityPerson {
+  id              String   @id @default(cuid())
+  activityId      String
+  activity        Activity @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  personelId      String
+  personel        Personel @relation(fields: [personelId], references: [id], onDelete: Cascade)
+  role            String?  // مسئول | مجری | پشتیبان | ناظر
+  assignedAt      DateTime @default(now())
+
+  @@unique([activityId, personelId])
+}
+
+// Multiple org positions can be assigned to an activity
+model ActivityOrgChart {
+  id              String   @id @default(cuid())
+  activityId      String
+  activity        Activity @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  orgChartId      String
+  orgChart        OrgChart @relation(fields: [orgChartId], references: [id], onDelete: Cascade)
+  role            String?
+  assignedAt      DateTime @default(now())
+
+  @@unique([activityId, orgChartId])
+}
+
+// Status update history (each person can update status)
+model ActivityStatusUpdate {
+  id              String   @id @default(cuid())
+  activityId      String
+  activity        Activity @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  personelId      String?
+  personel        Personel? @relation("ActivityStatusUpdater", fields: [personelId], references: [id], onDelete: SetNull)
+  previousStatus  String?
+  newStatus       String
+  progressPct     Float?
+  notes           String?
+  updatedAt       DateTime @default(now())
+  createdAt       DateTime @default(now())
+}

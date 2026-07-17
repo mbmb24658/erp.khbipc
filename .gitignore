@@ -52,3 +52,6 @@ agent-ctx/
 
 # OS files
 Thumbs.db
+
+.vercel
+.env*

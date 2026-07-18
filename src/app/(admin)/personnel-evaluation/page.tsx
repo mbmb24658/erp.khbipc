@@ -33,6 +33,7 @@ import {
   PlayCircle,
   Trash2,
   Loader2,
+  Sparkles,
 } from "lucide-react";
 import {
   BarChart,
@@ -138,6 +139,9 @@ function PositionsTab({ canManage }: { canManage: boolean }) {
   const [loading, setLoading] = useState(true);
   const [linkOpen, setLinkOpen] = useState(false);
   const [linking, setLinking] = useState<OrgChart | null>(null);
+  const [autoEvalOrg, setAutoEvalOrg] = useState<OrgChart | null>(null);
+  const [autoEvalPeriod, setAutoEvalPeriod] = useState("");
+  const [autoEvalLoading, setAutoEvalLoading] = useState(false);
   const [evalState, setEvalState] = useState<{
     open: boolean;
     org: OrgChart | null;
@@ -164,6 +168,49 @@ function PositionsTab({ canManage }: { canManage: boolean }) {
   useEffect(() => {
     fetchData();
   }, []);
+
+  // Open auto-evaluate dialog for an org chart (requires an HR template to be linked)
+  const openAutoEvalDialog = (org: OrgChart) => {
+    if (!org.hrPositionId) {
+      notifyError("برای این سمت الگوی HR متصل نیست");
+      return;
+    }
+    setAutoEvalOrg(org);
+    setAutoEvalPeriod("");
+    setAutoEvalLoading(false);
+  };
+
+  const runAutoEvaluate = async () => {
+    if (!autoEvalOrg || !autoEvalPeriod) {
+      notifyError("وارد کردن دوره الزامی است");
+      return;
+    }
+    setAutoEvalLoading(true);
+    try {
+      const res = await fetch("/api/kpi-evaluation/auto-evaluate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          orgChartId: autoEvalOrg.id,
+          period: autoEvalPeriod,
+        }),
+      });
+      if (!res.ok) {
+        const e = await res.json();
+        throw new Error(e.error || "خطا در ارزیابی خودکار");
+      }
+      const result = await res.json();
+      const devPct = result.averageDeviation != null
+        ? Math.round(result.averageDeviation * 100).toLocaleString("fa-IR")
+        : "۰";
+      notifySuccess(`ارزیابی خودکار با میانگین انحراف ${devPct}٪ ثبت شد`);
+      setAutoEvalOrg(null);
+      fetchData();
+    } catch (e: any) {
+      notifyError(e.message);
+    }
+    setAutoEvalLoading(false);
+  };
 
   const linkFields: FormField[] = [
     {
@@ -262,13 +309,23 @@ function PositionsTab({ canManage }: { canManage: boolean }) {
                             اتصال به الگوی HR
                           </Button>
                           {o.hrPositionId && (
-                            <Button
-                              size="sm"
-                              onClick={() => openEvalDialog(o)}
-                            >
-                              <PlayCircle className="w-4 h-4 ml-1" />
-                              شروع ارزیابی
-                            </Button>
+                            <>
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                onClick={() => openAutoEvalDialog(o)}
+                              >
+                                <Sparkles className="w-4 h-4 ml-1" />
+                                ارزیابی خودکار بر اساس انحراف
+                              </Button>
+                              <Button
+                                size="sm"
+                                onClick={() => openEvalDialog(o)}
+                              >
+                                <PlayCircle className="w-4 h-4 ml-1" />
+                                شروع ارزیابی
+                              </Button>
+                            </>
                           )}
                         </div>
                       </td>
@@ -302,6 +359,49 @@ function PositionsTab({ canManage }: { canManage: boolean }) {
         personel={personel}
         onDone={fetchData}
       />
+
+      {/* Auto-evaluate (based on plan deviation) dialog */}
+      <Dialog open={!!autoEvalOrg} onOpenChange={(o) => { if (!o) setAutoEvalOrg(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>ارزیابی خودکار بر اساس انحراف</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <p className="text-sm text-muted-foreground">
+              برای سمت «{autoEvalOrg?.position ?? ""}» یک ارزیابی خودکار ایجاد می‌شود.
+              امتیاز هر شاخص بر اساس میانگین انحراف فعالیت‌های WBS مرتبط با این سمت محاسبه
+              می‌شود (امتیاز = ۱۰۰ − میانگین انحراف × ۱۰۰).
+            </p>
+            <div className="space-y-1.5">
+              <Label>دوره ارزیابی</Label>
+              <Input
+                placeholder="مثال: 1405-07"
+                value={autoEvalPeriod}
+                onChange={(e) => setAutoEvalPeriod(e.target.value)}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setAutoEvalOrg(null)}
+              disabled={autoEvalLoading}
+            >
+              انصراف
+            </Button>
+            <Button
+              type="button"
+              onClick={runAutoEvaluate}
+              disabled={autoEvalLoading || !autoEvalPeriod}
+            >
+              {autoEvalLoading && <Loader2 className="w-4 h-4 ml-1 animate-spin" />}
+              <Sparkles className="w-4 h-4 ml-1" />
+              اجرای ارزیابی خودکار
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
@@ -438,12 +538,15 @@ function EvaluationDialog({
                         <div className="col-span-5">
                           <Input
                             type="number"
-                            placeholder="مقدار کسب شده"
+                            min={0}
+                            max={100}
+                            placeholder="مقدار کسب شده (۰ تا ۱۰۰)"
                             value={recordValues[ind.id] ?? ""}
                             onChange={(e) =>
                               setRecordValues({ ...recordValues, [ind.id]: e.target.value })
                             }
                           />
+                          <p className="text-[10px] text-muted-foreground mt-1">مقدار باید بین ۰ تا ۱۰۰ باشد</p>
                         </div>
                       </div>
                     ))}

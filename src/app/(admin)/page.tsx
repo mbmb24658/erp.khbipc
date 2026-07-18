@@ -10,9 +10,7 @@ import {
   Target,
   AlertTriangle,
   TrendingUp,
-  TrendingDown,
   Activity,
-  Calendar,
 } from "lucide-react";
 import Link from "next/link";
 import { SCurveChart } from "@/components/s-curve-chart";
@@ -30,10 +28,8 @@ export default async function DashboardPage() {
     kpiCount,
     riskCount,
     openRiskCount,
-    totalCost,
-    totalRevenue,
-    recentWbs,
-    personelWorkload,
+    recentActivities,
+    level2WbsList,
   ] = await Promise.all([
     db.wBS.count(),
     db.wBS.findFirst({ where: { level: 1 }, orderBy: { wbsCode: "asc" } }),
@@ -44,27 +40,21 @@ export default async function DashboardPage() {
     db.kPI.count(),
     db.risk.count(),
     db.risk.count({ where: { status: "open" } }),
-    db.costBreakdown.aggregate({ _sum: { programForecast: true } }),
-    db.revenueBreakdown.aggregate({ _sum: { programForecast: true } }),
-    db.wBS.findMany({
-      take: 8,
+    // Recent activities from the Activities module (5 latest)
+    db.activity.findMany({
+      take: 5,
       orderBy: { updatedAt: "desc" },
-      include: { _count: { select: { children: true, personels: true } } },
-    }),
-    // Personnel workload: count of org positions + count of in-progress activities per person
-    db.personel.findMany({
-      take: 8,
       include: {
-        orgChart: true,
-        _count: {
-          select: {
-            wbsAssignments: true,
-            activityAssignments: true,
-            kpiAssignments: true,
-          },
-        },
+        personAssignments: { include: { personel: true } },
       },
-      orderBy: { createdAt: "desc" },
+    }),
+    // All level-2 WBS activities (for S-curves)
+    db.wBS.findMany({
+      where: { level: 2 },
+      orderBy: { wbsCode: "asc" },
+      include: {
+        monthlyProgress: { orderBy: { monthDate: "asc" } },
+      },
     }),
   ]);
 
@@ -76,15 +66,35 @@ export default async function DashboardPage() {
       })
     : [];
 
-  const totalCostVal = totalCost._sum.programForecast || 0;
-  const totalRevenueVal = totalRevenue._sum.programForecast || 0;
-  const profit = totalRevenueVal - totalCostVal;
   const overallProgress = wbsRoot?.progressActual
     ? Math.round(wbsRoot.progressActual * 100)
     : 0;
   const overallPlan = wbsRoot?.progressPlan
     ? Math.round(wbsRoot.progressPlan * 100)
     : 0;
+
+  // Personnel workload sorted by activity count desc
+  const personelWorkload = await db.personel.findMany({
+    include: {
+      orgChart: true,
+      _count: {
+        select: {
+          wbsAssignments: true,
+          activityAssignments: true,
+          kpiAssignments: true,
+        },
+      },
+    },
+    orderBy: { createdAt: "desc" },
+  });
+  // Sort by total load descending
+  const sortedWorkload = personelWorkload
+    .map((p) => ({
+      ...p,
+      totalLoad: p._count.wbsAssignments + p._count.activityAssignments + p._count.kpiAssignments,
+    }))
+    .sort((a, b) => b.totalLoad - a.totalLoad)
+    .slice(0, 12); // Top 12 most loaded
 
   const stats = [
     {
@@ -193,55 +203,60 @@ export default async function DashboardPage() {
         </CardContent>
       </Card>
 
-      {/* Financial summary */}
-      <div className="grid gap-4 md:grid-cols-3">
+      {/* S-Curves for all level-2 WBS activities (replaces financial cards) */}
+      {level2WbsList.length > 0 && (
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              کل هزینه برنامه‌ریزی شده
-            </CardTitle>
-            <DollarSign className="w-4 h-4 text-amber-500" />
+          <CardHeader>
+            <CardTitle className="text-base">منحنی S موضوعات استراتژیک (سطح ۲)</CardTitle>
+            <p className="text-xs text-muted-foreground">
+              پیشرفت برنامه و واقعی برای هر موضوع استراتژیک
+            </p>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold">
-              {totalCostVal.toLocaleString("fa-IR")}
-            </p>
-            <p className="text-xs text-muted-foreground mt-1">میلیون تومان</p>
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+              {level2WbsList.map((wbs) => {
+                const actualPct = Math.round((wbs.progressActual || 0) * 100);
+                const planPct = Math.round((wbs.progressPlan || 0) * 100);
+                const deviation = actualPct - planPct;
+                return (
+                  <div key={wbs.id} className="border rounded-lg p-3 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="min-w-0 flex-1">
+                        <Link href={`/wbs/${wbs.id}`} className="hover:underline">
+                          <p className="text-sm font-medium truncate">
+                            {wbs.wbsCode} - {wbs.title}
+                          </p>
+                        </Link>
+                      </div>
+                      <Badge
+                        variant={deviation >= 0 ? "default" : "destructive"}
+                        className="font-num text-xs shrink-0"
+                      >
+                        {deviation >= 0 ? "+" : ""}
+                        {deviation.toLocaleString("fa-IR")}%
+                      </Badge>
+                    </div>
+                    <div className="h-20 min-h-20">
+                      <SCurveChart
+                        data={wbs.monthlyProgress.map((m) => ({
+                          monthDate: m.monthDate.toISOString(),
+                          plannedPct: m.plannedPct,
+                          actualPct: m.actualPct,
+                        }))}
+                        overallActual={wbs.progressActual ?? undefined}
+                      />
+                    </div>
+                    <div className="flex justify-between text-xs text-muted-foreground">
+                      <span>برنامه: <span className="font-num font-bold text-blue-600">{planPct.toLocaleString("fa-IR")}%</span></span>
+                      <span>واقعی: <span className="font-num font-bold text-emerald-600">{actualPct.toLocaleString("fa-IR")}%</span></span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </CardContent>
         </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              کل درآمد برنامه‌ریزی شده
-            </CardTitle>
-            <TrendingUp className="w-4 h-4 text-emerald-500" />
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold">
-              {totalRevenueVal.toLocaleString("fa-IR")}
-            </p>
-            <p className="text-xs text-muted-foreground mt-1">میلیون تومان</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              سود/زیان برنامه‌ریزی شده
-            </CardTitle>
-            <Activity className="w-4 h-4 text-violet-500" />
-          </CardHeader>
-          <CardContent>
-            <p
-              className={`text-2xl font-bold ${
-                profit >= 0 ? "text-emerald-600" : "text-red-600"
-              }`}
-            >
-              {profit.toLocaleString("fa-IR")}
-            </p>
-            <p className="text-xs text-muted-foreground mt-1">میلیون تومان</p>
-          </CardContent>
-        </Card>
-      </div>
+      )}
 
       {/* Stats grid */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -265,34 +280,47 @@ export default async function DashboardPage() {
         })}
       </div>
 
-      {/* Recent activity */}
+      {/* Recent activities (from Activities module - 5 latest) */}
       <Card>
         <CardHeader>
           <CardTitle className="text-base">آخرین فعالیت‌های به‌روزرسانی شده</CardTitle>
         </CardHeader>
         <CardContent>
-          {recentWbs.length === 0 ? (
+          {recentActivities.length === 0 ? (
             <p className="text-sm text-muted-foreground text-center py-8">
               هنوز فعالیتی ثبت نشده است
             </p>
           ) : (
             <div className="space-y-2">
-              {recentWbs.map((wbs) => (
+              {recentActivities.map((act) => (
                 <Link
-                  key={wbs.id}
-                  href={`/wbs/${wbs.id}`}
+                  key={act.id}
+                  href={`/activities/${act.id}`}
                   className="flex items-center justify-between p-3 rounded-lg border hover:bg-muted/50 transition-colors"
                 >
                   <div className="flex items-center gap-3 min-w-0">
                     <Badge variant="outline" className="font-mono text-xs">
-                      {wbs.wbsCode}
+                      {act.code}
                     </Badge>
-                    <span className="text-sm font-medium truncate">{wbs.title}</span>
+                    <span className="text-sm font-medium truncate">{act.title}</span>
                   </div>
                   <div className="flex items-center gap-3 text-xs text-muted-foreground shrink-0">
-                    <span>سطح: {wbs.level.toLocaleString("fa-IR")}</span>
-                    <span>
-                      پیشرفت: {Math.round(wbs.progressActual * 100).toLocaleString("fa-IR")}%
+                    {act.personAssignments[0]?.personel && (
+                      <span>{act.personAssignments[0].personel.name}</span>
+                    )}
+                    <Badge
+                      variant={
+                        act.status === "completed" ? "default" :
+                        act.status === "in_progress" ? "secondary" : "outline"
+                      }
+                      className="text-xs"
+                    >
+                      {act.status === "completed" ? "تکمیل" :
+                       act.status === "in_progress" ? "در حال انجام" :
+                       act.status === "pending" ? "در انتظار" : act.status}
+                    </Badge>
+                    <span className="font-num">
+                      {Math.round((act.progressPct || 0) * 100).toLocaleString("fa-IR")}%
                     </span>
                   </div>
                 </Link>
@@ -302,68 +330,62 @@ export default async function DashboardPage() {
         </CardContent>
       </Card>
 
-      {/* Personnel workload - renamed to "نقش سازمانی اجرا شده" */}
+      {/* Personnel workload - "نقش سازمانی اجرا شده" sorted by load desc */}
       <Card>
         <CardHeader>
           <CardTitle className="text-base">نقش سازمانی اجرا شده</CardTitle>
           <p className="text-xs text-muted-foreground">
-            تعداد نقش‌های سازمانی و فعالیت‌های اجرا شده توسط هر فرد
+            مرتب شده بر اساس بیشترین بار کاری — مسئولیت سنگین‌تر در صدر
           </p>
         </CardHeader>
         <CardContent>
-          {personelWorkload.length === 0 ? (
+          {sortedWorkload.length === 0 ? (
             <p className="text-sm text-muted-foreground text-center py-8">
               پرسنلی ثبت نشده است
             </p>
           ) : (
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              {personelWorkload.map((p) => {
+            <div className="space-y-2">
+              {sortedWorkload.map((p, idx) => {
                 const activityCount = p._count.activityAssignments;
                 const wbsCount = p._count.wbsAssignments;
                 const kpiCount = p._count.kpiAssignments;
-                const totalLoad = activityCount + wbsCount + kpiCount;
+                const totalLoad = p.totalLoad;
                 return (
-                  <div key={p.id} className="border rounded-lg p-3">
-                    <div className="flex items-center gap-2 mb-2">
-                      <div className="w-8 h-8 rounded-full bg-emerald-500 text-white flex items-center justify-center text-xs font-bold">
-                        {p.name.charAt(0)}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm font-medium truncate">{p.name}</p>
-                        <p className="text-xs text-muted-foreground truncate">
-                          {p.orgChart?.position || "بدون سمت"}
-                        </p>
-                      </div>
+                  <div
+                    key={p.id}
+                    className={`flex items-center gap-3 p-3 rounded-lg border ${
+                      idx === 0 ? "bg-red-50 dark:bg-red-950/20 border-red-200" :
+                      idx === 1 ? "bg-amber-50 dark:bg-amber-950/20 border-amber-200" :
+                      idx === 2 ? "bg-yellow-50 dark:bg-yellow-950/20 border-yellow-200" :
+                      ""
+                    }`}
+                  >
+                    <div className="w-8 h-8 rounded-full bg-emerald-500 text-white flex items-center justify-center text-xs font-bold shrink-0">
+                      {p.name.charAt(0)}
                     </div>
-                    <div className="grid grid-cols-3 gap-1 text-center text-xs">
-                      <div className="bg-muted/50 rounded p-1.5">
-                        <p className="font-bold font-num">
-                          {activityCount.toLocaleString("fa-IR")}
-                        </p>
-                        <p className="text-muted-foreground">فعالیت</p>
-                      </div>
-                      <div className="bg-muted/50 rounded p-1.5">
-                        <p className="font-bold font-num">
-                          {wbsCount.toLocaleString("fa-IR")}
-                        </p>
-                        <p className="text-muted-foreground">نقش WBS</p>
-                      </div>
-                      <div className="bg-muted/50 rounded p-1.5">
-                        <p className="font-bold font-num">
-                          {kpiCount.toLocaleString("fa-IR")}
-                        </p>
-                        <p className="text-muted-foreground">KPI</p>
-                      </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium truncate">{p.name}</p>
+                      <p className="text-xs text-muted-foreground truncate">
+                        {p.orgChart?.position || "بدون سمت"}
+                      </p>
                     </div>
-                    <div className="mt-2 pt-2 border-t flex justify-between text-xs">
-                      <span className="text-muted-foreground">کل نقش‌ها:</span>
-                      <Badge
-                        variant={totalLoad > 5 ? "destructive" : totalLoad > 2 ? "secondary" : "outline"}
-                        className="font-num"
-                      >
-                        {totalLoad.toLocaleString("fa-IR")}
-                      </Badge>
+                    <div className="flex items-center gap-2 text-xs shrink-0">
+                      <span className="bg-muted/50 rounded px-2 py-1">
+                        فعالیت: <span className="font-bold font-num">{activityCount.toLocaleString("fa-IR")}</span>
+                      </span>
+                      <span className="bg-muted/50 rounded px-2 py-1">
+                        WBS: <span className="font-bold font-num">{wbsCount.toLocaleString("fa-IR")}</span>
+                      </span>
+                      <span className="bg-muted/50 rounded px-2 py-1">
+                        KPI: <span className="font-bold font-num">{kpiCount.toLocaleString("fa-IR")}</span>
+                      </span>
                     </div>
+                    <Badge
+                      variant={totalLoad > 5 ? "destructive" : totalLoad > 2 ? "secondary" : "outline"}
+                      className="font-num shrink-0"
+                    >
+                      {totalLoad.toLocaleString("fa-IR")}
+                    </Badge>
                   </div>
                 );
               })}

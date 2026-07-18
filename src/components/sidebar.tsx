@@ -75,6 +75,19 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   // Filter nav items based on user role
   const visibleItems = navItems.filter((item) => item.roles.includes(userRole));
 
+  // Determine active state — special case: financial and financial-dashboard are linked
+  const isItemActive = (item: typeof navItems[0]) => {
+    if (item.exact) return pathname === item.href;
+    // Financial dashboard and financial management are linked
+    if (item.href === "/financial-dashboard") {
+      return pathname === "/financial-dashboard" || pathname.startsWith("/financial");
+    }
+    if (item.href === "/financial") {
+      return pathname === "/financial-dashboard" || pathname.startsWith("/financial");
+    }
+    return pathname.startsWith(item.href);
+  };
+
   return (
     <div className="flex h-full flex-col bg-sidebar text-sidebar-foreground">
       {/* Logo */}
@@ -92,17 +105,16 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
       <ScrollArea className="flex-1 px-3 py-4">
         <nav className="space-y-1">
           {visibleItems.map((item) => {
-            const isActive = item.exact
-              ? pathname === item.href
-              : pathname.startsWith(item.href);
+            const isActive = isItemActive(item);
             const Icon = item.icon;
+            const isNotifications = item.href === "/notifications";
             return (
               <Link
                 key={item.href}
                 href={item.href}
                 onClick={onNavigate}
                 className={cn(
-                  "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
+                  "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors relative",
                   isActive
                     ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-sm"
                     : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
@@ -110,7 +122,8 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
               >
                 <Icon className="w-4 h-4 shrink-0" />
                 <span className="flex-1 truncate">{item.label}</span>
-                {!isActive && <ChevronLeft className="w-3 h-3 opacity-50" />}
+                {isNotifications && <NotificationBadge />}
+                {!isActive && !isNotifications && <ChevronLeft className="w-3 h-3 opacity-50" />}
               </Link>
             );
           })}
@@ -122,6 +135,37 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
         <UserCard />
       </div>
     </div>
+  );
+}
+
+// Badge showing unread notification count
+function NotificationBadge() {
+  const [count, setCount] = useState<number>(0);
+
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+    const fetchCount = async () => {
+      try {
+        const res = await fetch("/api/notification?unread=true");
+        if (res.ok) {
+          const data = await res.json();
+          setCount(Array.isArray(data) ? data.length : 0);
+        }
+      } catch {
+        // ignore
+      }
+    };
+    fetchCount();
+    // Poll every 60 seconds
+    interval = setInterval(fetchCount, 60000);
+    return () => clearInterval(interval);
+  }, []);
+
+  if (count === 0) return null;
+  return (
+    <span className="absolute left-1 top-1/2 -translate-y-1/2 bg-red-500 text-white text-[10px] font-bold rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1">
+      {count > 99 ? "۹۹+" : count.toLocaleString("fa-IR")}
+    </span>
   );
 }
 

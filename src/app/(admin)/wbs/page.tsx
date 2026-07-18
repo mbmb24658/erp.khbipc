@@ -75,8 +75,8 @@ const fields = [
   { key: "progressActual", label: "پیشرفت واقعی (%)", type: "number" as const, placeholder: "0-100" },
   { key: "startDate", label: "تاریخ شروع", type: "date" as const },
   { key: "finishDate", label: "تاریخ پایان", type: "date" as const },
-  { key: "hrPlan", label: "منابع انسانی برنامه", type: "textarea" as const },
-  { key: "hrActual", label: "منابع انسانی واقعی", type: "textarea" as const },
+  { key: "hrPlan", label: "منابع انسانی برنامه (سمت‌ها)", type: "multiselect" as const, options: [] as any, helpText: "سمت‌های سازمانی مورد نیاز فعالیت" },
+  { key: "hrActual", label: "منابع انسانی واقعی (پرسنل)", type: "multiselect" as const, options: [] as any, helpText: "پرسنل واقعی اختصاص یافته به فعالیت" },
   { key: "actualCost", label: "هزینه واقعی (میلیون تومان)", type: "number" as const },
   { key: "costVariance", label: "انحراف هزینه", type: "number" as const },
   { key: "scheduleVariance", label: "انحراف زمانی", type: "number" as const },
@@ -114,6 +114,7 @@ export default function WBSPage() {
   const [deleting, setDeleting] = useState<WBS | null>(null);
   const [allWbs, setAllWbs] = useState<WBS[]>([]);
   const [orgCharts, setOrgCharts] = useState<any[]>([]);
+  const [personels, setPersonels] = useState<any[]>([]);
   const [moveOpen, setMoveOpen] = useState(false);
   const [moving, setMoving] = useState<WBS | null>(null);
   const [moveTargetId, setMoveTargetId] = useState<string>("");
@@ -125,14 +126,16 @@ export default function WBSPage() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [resWbs, resOrg] = await Promise.all([
+      const [resWbs, resOrg, resPersonel] = await Promise.all([
         fetch("/api/wbs"),
         fetch("/api/org-chart"),
+        fetch("/api/personel"),
       ]);
       const json = await resWbs.json();
       setData(json);
       setAllWbs(json);
       if (resOrg.ok) setOrgCharts(await resOrg.json());
+      if (resPersonel.ok) setPersonels(await resPersonel.json());
       // Auto-expand top 2 levels
       const top = json.filter((w: WBS) => w.level <= 2).map((w: WBS) => w.id);
       setExpanded(new Set(top));
@@ -339,6 +342,14 @@ export default function WBSPage() {
     if (formData.progressActual !== null) formData.progressActual = formData.progressActual / 100;
     if (formData.parentId === "") formData.parentId = null;
 
+    // Convert multiselect arrays to JSON strings before sending to API
+    if (Array.isArray(formData.hrPlan)) {
+      formData.hrPlan = formData.hrPlan.length > 0 ? JSON.stringify(formData.hrPlan) : null;
+    }
+    if (Array.isArray(formData.hrActual)) {
+      formData.hrActual = formData.hrActual.length > 0 ? JSON.stringify(formData.hrActual) : null;
+    }
+
     const url = editing ? `/api/wbs/${editing.id}` : "/api/wbs";
     const method = editing ? "PUT" : "POST";
     const res = await fetch(url, {
@@ -423,7 +434,7 @@ export default function WBSPage() {
     }
   };
 
-  // Fields with parent options + org position options
+  // Fields with parent options + org position options + multiselect options
   const fieldsWithParents = fields.map((f) =>
     f.key === "parentId"
       ? {
@@ -440,6 +451,22 @@ export default function WBSPage() {
             label: `${o.orgId} - ${o.position}`,
           })),
         }
+      : f.key === "hrPlan"
+      ? {
+          ...f,
+          options: orgCharts.map((o: any) => ({
+            value: o.id,
+            label: `${o.orgId} - ${o.position}`,
+          })),
+        }
+      : f.key === "hrActual"
+      ? {
+          ...f,
+          options: personels.map((p: any) => ({
+            value: p.id,
+            label: `${p.personelId} - ${p.name}`,
+          })),
+        }
       : f.key === "progressPlan" || f.key === "progressActual"
       ? {
           ...f,
@@ -449,6 +476,17 @@ export default function WBSPage() {
       : f
   );
 
+  // Parse JSON-encoded array fields for multiselects
+  const parseArrayField = (val: string | null | undefined): string[] => {
+    if (!val) return [];
+    try {
+      const parsed = JSON.parse(val);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  };
+
   // Convert initial data for editing (percent 0-1 to 0-100)
   const initialForForm = editing
     ? {
@@ -457,6 +495,8 @@ export default function WBSPage() {
         progressActual: Math.round(editing.progressActual * 100),
         startDate: editing.startDate ? editing.startDate.split("T")[0] : "",
         finishDate: editing.finishDate ? editing.finishDate.split("T")[0] : "",
+        hrPlan: parseArrayField(editing.hrPlan),
+        hrActual: parseArrayField(editing.hrActual),
       }
     : {
         level: presetLevel ?? 1,
@@ -464,6 +504,8 @@ export default function WBSPage() {
         durationDays: 0,
         progressPlan: 0,
         progressActual: 0,
+        hrPlan: [],
+        hrActual: [],
       };
 
   return (

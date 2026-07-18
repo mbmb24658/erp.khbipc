@@ -734,6 +734,9 @@ model Activity {
   // Status tracking
   status          String   @default("pending") // pending | in_progress | completed | cancelled | on_hold
   progressPct     Float    @default(0)
+  // HR resources (JSON-encoded arrays: hrPlan = OrgChart IDs, hrActual = Personel IDs)
+  hrPlan          String?  // JSON array of OrgChart IDs (سمت‌های سازمانی برنامه‌ریزی شده)
+  hrActual        String?  // JSON array of Personel IDs (پرسنل واقعی اختصاص یافته)
   // Tracking
   createdById     String?
   notes           String?

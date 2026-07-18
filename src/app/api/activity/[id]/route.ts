@@ -67,6 +67,8 @@ export async function PUT(
         priority: data.priority ?? existing.priority,
         status: data.status ?? existing.status,
         progressPct: data.progressPct ?? existing.progressPct,
+        hrPlan: data.hrPlan === undefined ? existing.hrPlan : (data.hrPlan || null),
+        hrActual: data.hrActual === undefined ? existing.hrActual : (data.hrActual || null),
         notes: data.notes === undefined ? existing.notes : data.notes || null,
       },
     });

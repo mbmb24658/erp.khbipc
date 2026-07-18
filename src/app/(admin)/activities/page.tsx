@@ -87,10 +87,18 @@ interface Activity {
   priority: number;
   status: string;
   progressPct: number;
+  hrPlan: string | null;
+  hrActual: string | null;
   notes: string | null;
   personAssignments: ActivityPerson[];
   orgAssignments: ActivityOrgChart[];
   _count?: { statusUpdates: number };
+}
+
+interface OrgChart {
+  id: string;
+  orgId: string;
+  position: string;
 }
 
 const urgencyMap: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
@@ -136,6 +144,7 @@ export default function ActivitiesPage() {
   const [data, setData] = useState<Activity[]>([]);
   const [personel, setPersonel] = useState<Personel[]>([]);
   const [assets, setAssets] = useState<Asset[]>([]);
+  const [orgCharts, setOrgCharts] = useState<OrgChart[]>([]);
   const [loading, setLoading] = useState(true);
   const [editOpen, setEditOpen] = useState(false);
   const [editing, setEditing] = useState<Activity | null>(null);
@@ -150,14 +159,16 @@ export default function ActivitiesPage() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [a, p, as] = await Promise.all([
+      const [a, p, as, oc] = await Promise.all([
         fetch("/api/activity"),
         fetch("/api/personel"),
         fetch("/api/asset"),
+        fetch("/api/org-chart"),
       ]);
       setData(await a.json());
       setPersonel(await p.json());
       setAssets(await as.json());
+      if (oc.ok) setOrgCharts(await oc.json());
     } catch {
       notifyError("خطا در بارگذاری اطلاعات");
     }
@@ -269,6 +280,20 @@ export default function ActivitiesPage() {
     },
     { key: "progressPct", label: "درصد پیشرفت (0-100)", type: "number" },
     {
+      key: "hrPlan",
+      label: "منابع انسانی برنامه (سمت‌ها)",
+      type: "multiselect",
+      options: orgCharts.map((o) => ({ value: o.id, label: `${o.orgId} - ${o.position}` })),
+      helpText: "سمت‌های سازمانی مورد نیاز فعالیت",
+    },
+    {
+      key: "hrActual",
+      label: "منابع انسانی واقعی (پرسنل)",
+      type: "multiselect",
+      options: personel.map((p) => ({ value: p.id, label: `${p.personelId} - ${p.name}` })),
+      helpText: "پرسنل واقعی اختصاص یافته به فعالیت",
+    },
+    {
       key: "responsiblePersonId",
       label: "مسئول فعالیت",
       type: "select",
@@ -282,6 +307,14 @@ export default function ActivitiesPage() {
   const handleSave = async (formData: Record<string, any>) => {
     // Extract responsiblePersonId — not part of activity schema, handled separately
     const { responsiblePersonId, ...activityData } = formData;
+
+    // Convert multiselect arrays to JSON strings before sending to API
+    if (Array.isArray(activityData.hrPlan)) {
+      activityData.hrPlan = activityData.hrPlan.length > 0 ? JSON.stringify(activityData.hrPlan) : null;
+    }
+    if (Array.isArray(activityData.hrActual)) {
+      activityData.hrActual = activityData.hrActual.length > 0 ? JSON.stringify(activityData.hrActual) : null;
+    }
 
     const url = editing ? `/api/activity/${editing.id}` : "/api/activity";
     const method = editing ? "PUT" : "POST";
@@ -349,6 +382,17 @@ export default function ActivitiesPage() {
     setEditOpen(true);
   };
 
+  // Parse JSON-encoded array fields for multiselects
+  const parseArrayField = (val: string | null | undefined): string[] => {
+    if (!val) return [];
+    try {
+      const parsed = JSON.parse(val);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  };
+
   const initialForForm = editing
     ? {
         ...editing,
@@ -356,8 +400,10 @@ export default function ActivitiesPage() {
           editing.personAssignments.find((p) => p.role === "مسئول")?.personelId || "",
         startDate: editing.startDate ? editing.startDate.split("T")[0] : "",
         endDate: editing.endDate ? editing.endDate.split("T")[0] : "",
+        hrPlan: parseArrayField(editing.hrPlan),
+        hrActual: parseArrayField(editing.hrActual),
       }
-    : { status: "pending", urgency: "normal", priority: 3, progressPct: 0 };
+    : { status: "pending", urgency: "normal", priority: 3, progressPct: 0, hrPlan: [], hrActual: [] };
 
   const renderQuickStatusDropdown = (activity: Activity) => (
     <div onClick={(e) => e.stopPropagation()}>

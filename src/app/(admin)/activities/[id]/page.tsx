@@ -12,6 +12,7 @@ import {
   Users,
   Building,
   Activity as ActivityIcon,
+  ClipboardList,
 } from "lucide-react";
 import { ActivityDetailClient, RemoveAssignmentClient } from "./activity-detail-client";
 
@@ -38,6 +39,32 @@ export default async function ActivityDetailPage({
   });
 
   if (!activity) notFound();
+
+  // Parse hrPlan / hrActual JSON arrays and resolve names for display
+  const parseIds = (val: string | null | undefined): string[] => {
+    if (!val) return [];
+    try {
+      const parsed = JSON.parse(val);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  };
+  const hrPlanIds = parseIds(activity.hrPlan);
+  const hrActualIds = parseIds(activity.hrActual);
+
+  const hrPlanNames = hrPlanIds.length > 0
+    ? await db.orgChart.findMany({
+        where: { id: { in: hrPlanIds } },
+        select: { id: true, orgId: true, position: true },
+      })
+    : [];
+  const hrActualNames = hrActualIds.length > 0
+    ? await db.personel.findMany({
+        where: { id: { in: hrActualIds } },
+        select: { id: true, personelId: true, name: true },
+      })
+    : [];
 
   const data = JSON.parse(JSON.stringify(activity));
 
@@ -137,6 +164,52 @@ export default async function ActivityDetailPage({
                 {data.asset ? `${data.asset.assetId} - ${data.asset.title}` : "-"}
               </p>
             </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-2 mb-6">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <ClipboardList className="w-4 h-4" />
+              منابع انسانی برنامه — سمت‌ها ({hrPlanNames.length.toLocaleString("fa-IR")})
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {hrPlanNames.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-4">سمتی ثبت نشده است</p>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {hrPlanNames.map((o: any) => (
+                  <Badge key={o.id} variant="secondary" className="text-xs">
+                    {o.orgId} - {o.position}
+                  </Badge>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Users className="w-4 h-4" />
+              منابع انسانی واقعی — پرسنل ({hrActualNames.length.toLocaleString("fa-IR")})
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {hrActualNames.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-4">پرسنلی ثبت نشده است</p>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {hrActualNames.map((p: any) => (
+                  <Badge key={p.id} variant="default" className="text-xs">
+                    {p.personelId} - {p.name}
+                  </Badge>
+                ))}
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>

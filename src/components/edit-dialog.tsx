@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { JalaliDatePicker } from "@/components/jalali-date-picker";
 import { ReactNode, useState, useEffect } from "react";
 import { Loader2 } from "lucide-react";
@@ -12,7 +13,7 @@ import { Loader2 } from "lucide-react";
 export interface FormField {
   key: string;
   label: string;
-  type?: "text" | "number" | "date" | "textarea" | "select" | "password";
+  type?: "text" | "number" | "date" | "textarea" | "select" | "password" | "multiselect";
   options?: { value: string; label: string }[];
   required?: boolean;
   placeholder?: string;
@@ -60,7 +61,10 @@ export function EditDialog({
       const cleaned: Record<string, any> = {};
       for (const f of fields) {
         const v = data[f.key];
-        if (v === "" || v === undefined || v === null) {
+        if (f.type === "multiselect") {
+          // Array of selected IDs (or null if empty)
+          cleaned[f.key] = Array.isArray(v) && v.length > 0 ? v : null;
+        } else if (v === "" || v === undefined || v === null) {
           cleaned[f.key] = null;
         } else if (f.type === "number") {
           cleaned[f.key] = Number(v);
@@ -122,6 +126,13 @@ export function EditDialog({
                       ))}
                     </SelectContent>
                   </Select>
+                ) : f.type === "multiselect" ? (
+                  <MultiSelectField
+                    options={f.options || []}
+                    selectedValues={Array.isArray(data[f.key]) ? data[f.key] : []}
+                    onChange={(vals) => setData({ ...data, [f.key]: vals })}
+                    placeholder={f.placeholder || "انتخاب کنید"}
+                  />
                 ) : f.type === "date" ? (
                   <JalaliDatePicker
                     value={data[f.key] ?? ""}
@@ -213,5 +224,86 @@ export function ConfirmDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+// Multi-select field component with checkboxes
+function MultiSelectField({
+  options,
+  selectedValues,
+  onChange,
+  placeholder,
+}: {
+  options: { value: string; label: string }[];
+  selectedValues: string[];
+  onChange: (vals: string[]) => void;
+  placeholder?: string;
+}) {
+  const [open, setOpen] = useState(false);
+
+  const toggle = (val: string) => {
+    if (selectedValues.includes(val)) {
+      onChange(selectedValues.filter((v) => v !== val));
+    } else {
+      onChange([...selectedValues, val]);
+    }
+  };
+
+  const selectedLabels = options
+    .filter((o) => selectedValues.includes(o.value))
+    .map((o) => o.label);
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          className="w-full justify-start text-right font-normal h-auto min-h-[40px] py-2"
+        >
+          {selectedLabels.length > 0 ? (
+            <div className="flex flex-wrap gap-1 w-full">
+              {selectedLabels.map((label, i) => (
+                <span
+                  key={i}
+                  className="inline-flex items-center gap-1 bg-primary/10 text-primary text-xs rounded px-1.5 py-0.5"
+                >
+                  {label}
+                </span>
+              ))}
+            </div>
+          ) : (
+            <span className="text-muted-foreground">{placeholder || "انتخاب کنید"}</span>
+          )}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[400px] max-h-[300px] overflow-y-auto p-2" align="start">
+        <div className="space-y-1">
+          {options.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-4">
+              موردی موجود نیست
+            </p>
+          ) : (
+            options.map((o) => {
+              const checked = selectedValues.includes(o.value);
+              return (
+                <label
+                  key={o.value}
+                  className="flex items-center gap-2 p-2 rounded hover:bg-muted/50 cursor-pointer text-sm"
+                >
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={() => toggle(o.value)}
+                    className="w-4 h-4 rounded"
+                  />
+                  <span className="flex-1">{o.label}</span>
+                </label>
+              );
+            })
+          )}
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }

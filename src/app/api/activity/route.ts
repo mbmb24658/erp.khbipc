@@ -52,6 +52,8 @@ export async function POST(req: NextRequest) {
         priority: data.priority ?? 3,
         status: data.status || "pending",
         progressPct: data.progressPct ?? 0,
+        hrPlan: data.hrPlan || null,
+        hrActual: data.hrActual || null,
         notes: data.notes || null,
         createdById: (session.user as any).id,
       },

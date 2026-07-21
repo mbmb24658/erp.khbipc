@@ -33,7 +33,7 @@ import { cn } from "@/lib/utils";
 const navItems = [
   { href: "/", label: "داشبورد", icon: LayoutDashboard, exact: true, roles: ["admin", "moderator", "user"] },
   { href: "/financial-dashboard", label: "داشبورد مالی", icon: DollarSign, roles: ["admin", "moderator", "user"] },
-  { href: "/wbs", label: "ساختار شکست کار (WBS)", icon: Network, roles: ["admin", "moderator", "user"] },
+  { href: "/wbs", label: "PMS جامع سازمان", icon: Network, roles: ["admin", "moderator", "user"] },
   { href: "/progress-update", label: "به‌روزرسانی پیشرفت", icon: Activity, roles: ["admin", "moderator", "user"] },
   { href: "/hr", label: "منابع انسانی", icon: Users, roles: ["admin", "moderator", "user"] },
   { href: "/financial", label: "مدیریت مالی", icon: DollarSign, roles: ["admin", "moderator", "user"] },

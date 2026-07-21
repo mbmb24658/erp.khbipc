@@ -511,7 +511,7 @@ export default function WBSPage() {
   return (
     <div>
       <PageHeader
-        title="ساختار شکست کار (WBS)"
+        title="PMS جامع سازمان"
         description={`${data.length.toLocaleString("fa-IR")} فعالیت ثبت شده است`}
       >
         {canEdit && (

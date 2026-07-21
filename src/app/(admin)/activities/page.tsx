@@ -137,19 +137,31 @@ function Avatar({ name }: { name: string }) {
   );
 }
 
+interface WBSItem {
+  id: string;
+  wbsCode: string;
+  title: string;
+  level: number;
+}
+
 export default function ActivitiesPage() {
   const router = useRouter();
   const { data: session } = useSession();
-  const canEdit = (session?.user as any)?.role !== "user";
+  const userRole = (session?.user as any)?.role || "user";
+  const isAdmin = userRole === "admin";
+  // Non-admin users can still update status on activities assigned to them
+  const canEdit = isAdmin;
   const [data, setData] = useState<Activity[]>([]);
   const [personel, setPersonel] = useState<Personel[]>([]);
   const [assets, setAssets] = useState<Asset[]>([]);
   const [orgCharts, setOrgCharts] = useState<OrgChart[]>([]);
+  const [wbsLevel4, setWbsLevel4] = useState<WBSItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [editOpen, setEditOpen] = useState(false);
   const [editing, setEditing] = useState<Activity | null>(null);
   const [view, setView] = useState<"list" | "kanban">("list");
   const [updatingStatus, setUpdatingStatus] = useState<string | null>(null);
+  const [presetCode, setPresetCode] = useState<string>("");
 
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -159,16 +171,18 @@ export default function ActivitiesPage() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [a, p, as, oc] = await Promise.all([
+      const [a, p, as, oc, wbs] = await Promise.all([
         fetch("/api/activity"),
         fetch("/api/personel"),
         fetch("/api/asset"),
         fetch("/api/org-chart"),
+        fetch("/api/wbs?level=4"),
       ]);
       setData(await a.json());
       setPersonel(await p.json());
       setAssets(await as.json());
       if (oc.ok) setOrgCharts(await oc.json());
+      if (wbs.ok) setWbsLevel4(await wbs.json());
     } catch {
       notifyError("خطا در بارگذاری اطلاعات");
     }
@@ -247,7 +261,13 @@ export default function ActivitiesPage() {
   };
 
   const fields: FormField[] = [
-    { key: "code", label: "کد فعالیت", required: true, placeholder: "مثال: ACT-001" },
+    {
+      key: "code",
+      label: "کد فعالیت",
+      required: true,
+      readOnly: true,
+      helpText: "کد فعالیت به‌صورت خودکار تولید می‌شود",
+    },
     { key: "title", label: "عنوان", required: true },
     { key: "description", label: "توضیحات", type: "textarea" },
     {
@@ -256,7 +276,13 @@ export default function ActivitiesPage() {
       type: "select",
       options: assets.map((a) => ({ value: a.id, label: `${a.assetId} - ${a.title}` })),
     },
-    { key: "wbsId", label: "کد WBS (اختیاری)" },
+    {
+      key: "wbsId",
+      label: "فرآیند مرتبط (WBS)",
+      type: "select",
+      options: wbsLevel4.map((w) => ({ value: w.id, label: `${w.wbsCode} - ${w.title}` })),
+      helpText: "فرآیندی که این فعالیت در راستای آن است",
+    },
     { key: "startDate", label: "تاریخ شروع", type: "date" },
     { key: "endDate", label: "تاریخ پایان", type: "date" },
     { key: "durationDays", label: "مدت زمان (روز)", type: "number" },
@@ -271,42 +297,33 @@ export default function ActivitiesPage() {
         { value: "urgent", label: "فوری" },
       ],
     },
-    { key: "priority", label: "اولویت (1-5)", type: "number", helpText: "عددی بین 1 تا 5" },
+    { key: "priority", label: "اولویت (1-5)", type: "number", min: 1, max: 5, helpText: "عددی بین 1 تا 5" },
     {
       key: "status",
       label: "وضعیت",
       type: "select",
       options: statusOptions,
     },
-    { key: "progressPct", label: "درصد پیشرفت (0-100)", type: "number" },
+    { key: "progressPct", label: "درصد پیشرفت (0-100)", type: "number", min: 0, max: 100 },
     {
       key: "hrPlan",
-      label: "منابع انسانی برنامه (سمت‌ها)",
+      label: "سمت‌های سازمانی برنامه‌ریزی شده",
       type: "multiselect",
       options: orgCharts.map((o) => ({ value: o.id, label: `${o.orgId} - ${o.position}` })),
       helpText: "سمت‌های سازمانی مورد نیاز فعالیت",
     },
     {
       key: "hrActual",
-      label: "منابع انسانی واقعی (پرسنل)",
+      label: "اشخاص حقیقی اختصاص یافته",
       type: "multiselect",
       options: personel.map((p) => ({ value: p.id, label: `${p.personelId} - ${p.name}` })),
       helpText: "پرسنل واقعی اختصاص یافته به فعالیت",
-    },
-    {
-      key: "responsiblePersonId",
-      label: "مسئول فعالیت",
-      type: "select",
-      options: personel.map((p) => ({ value: p.id, label: `${p.personelId} - ${p.name}` })),
-      helpText: "این شخص می‌تواند وضعیت فعالیت را به‌روزرسانی کند",
-      required: true,
     },
     { key: "notes", label: "یادداشت", type: "textarea" },
   ];
 
   const handleSave = async (formData: Record<string, any>) => {
-    // Extract responsiblePersonId — not part of activity schema, handled separately
-    const { responsiblePersonId, ...activityData } = formData;
+    const activityData = { ...formData };
 
     // Convert multiselect arrays to JSON strings before sending to API
     if (Array.isArray(activityData.hrPlan)) {
@@ -327,51 +344,6 @@ export default function ActivitiesPage() {
       const e = await res.json();
       throw new Error(e.error || "خطا در ذخیره‌سازی");
     }
-    const savedActivity = await res.json();
-
-    // Handle responsible person assignment via /api/activity-person
-    if (responsiblePersonId) {
-      if (editing) {
-        const existingResponsible = editing.personAssignments.find(
-          (p) => p.role === "مسئول"
-        );
-        if (existingResponsible && existingResponsible.personelId !== responsiblePersonId) {
-          // Remove old responsible, then assign new
-          await fetch(`/api/activity-person?id=${existingResponsible.id}`, { method: "DELETE" });
-          await fetch("/api/activity-person", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              activityId: savedActivity.id,
-              personelId: responsiblePersonId,
-              role: "مسئول",
-            }),
-          });
-        } else if (!existingResponsible) {
-          // No existing responsible — assign new
-          await fetch("/api/activity-person", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              activityId: savedActivity.id,
-              personelId: responsiblePersonId,
-              role: "مسئول",
-            }),
-          });
-        }
-      } else {
-        // New activity — assign responsible person
-        await fetch("/api/activity-person", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            activityId: savedActivity.id,
-            personelId: responsiblePersonId,
-            role: "مسئول",
-          }),
-        });
-      }
-    }
 
     notifySuccess(editing ? "فعالیت ویرایش شد" : "فعالیت جدید ایجاد شد");
     fetchData();
@@ -379,6 +351,19 @@ export default function ActivitiesPage() {
 
   const openEdit = (row: Activity) => {
     setEditing(row);
+    setEditOpen(true);
+  };
+
+  const openAdd = async () => {
+    setEditing(null);
+    setPresetCode("");
+    try {
+      const res = await fetch("/api/activity/next-code");
+      const payload = await res.json();
+      setPresetCode(payload.code || "");
+    } catch {
+      // ignore — leave blank
+    }
     setEditOpen(true);
   };
 
@@ -396,14 +381,20 @@ export default function ActivitiesPage() {
   const initialForForm = editing
     ? {
         ...editing,
-        responsiblePersonId:
-          editing.personAssignments.find((p) => p.role === "مسئول")?.personelId || "",
         startDate: editing.startDate ? editing.startDate.split("T")[0] : "",
         endDate: editing.endDate ? editing.endDate.split("T")[0] : "",
         hrPlan: parseArrayField(editing.hrPlan),
         hrActual: parseArrayField(editing.hrActual),
       }
-    : { status: "pending", urgency: "normal", priority: 3, progressPct: 0, hrPlan: [], hrActual: [] };
+    : {
+        code: presetCode,
+        status: "pending",
+        urgency: "normal",
+        priority: 3,
+        progressPct: 0,
+        hrPlan: [],
+        hrActual: [],
+      };
 
   const renderQuickStatusDropdown = (activity: Activity) => (
     <div onClick={(e) => e.stopPropagation()}>
@@ -474,8 +465,8 @@ export default function ActivitiesPage() {
         title="مدیریت فعالیت‌های جاری"
         description="فعالیت‌هایی که به اشخاص حقیقی و سمت‌های سازمانی اساین شده‌اند"
       >
-        {canEdit && (
-          <Button onClick={() => { setEditing(null); setEditOpen(true); }}>
+        {isAdmin && (
+          <Button onClick={openAdd}>
             <Plus className="w-4 h-4 ml-1" />
             افزودن فعالیت
           </Button>

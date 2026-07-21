@@ -27,17 +27,32 @@ export async function POST(req: NextRequest) {
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const data = await req.json();
-  if (!data.code || !data.name) {
-    return NextResponse.json({ error: "کد و نام مجری الزامی است" }, { status: 400 });
+  if (!data.name) {
+    return NextResponse.json({ error: "نام مجری الزامی است" }, { status: 400 });
   }
 
-  const dup = await db.executor.findUnique({ where: { code: data.code } });
+  // Auto-generate code: EX-001, EX-002, ...
+  const lastExecutor = await db.executor.findFirst({
+    orderBy: { code: "desc" },
+    select: { code: true },
+  });
+  let newCode = "EX-001";
+  if (lastExecutor?.code) {
+    const match = lastExecutor.code.match(/EX-(\d+)/);
+    if (match) {
+      const nextNum = parseInt(match[1]) + 1;
+      newCode = `EX-${String(nextNum).padStart(3, "0")}`;
+    }
+  }
+
+  // Safety: ensure the generated code is unique
+  const dup = await db.executor.findUnique({ where: { code: newCode } });
   if (dup) return NextResponse.json({ error: "کد مجری تکراری است" }, { status: 400 });
 
   try {
     const p = await db.executor.create({
       data: {
-        code: data.code,
+        code: newCode,
         name: data.name,
         type: data.type || null,
         nationalId: data.nationalId || null,

@@ -18,6 +18,9 @@ export interface FormField {
   required?: boolean;
   placeholder?: string;
   helpText?: string;
+  readOnly?: boolean;
+  min?: number;
+  max?: number;
 }
 
 interface EditDialogProps {
@@ -147,6 +150,10 @@ export function EditDialog({
                     onChange={(e) => setData({ ...data, [f.key]: e.target.value })}
                     placeholder={f.placeholder}
                     step={f.type === "number" ? "any" : undefined}
+                    readOnly={f.readOnly}
+                    min={f.type === "number" ? f.min : undefined}
+                    max={f.type === "number" ? f.max : undefined}
+                    className={f.readOnly ? "bg-muted/50 text-muted-foreground cursor-not-allowed" : undefined}
                   />
                 )}
                 {f.helpText && (

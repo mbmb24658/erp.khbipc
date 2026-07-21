@@ -61,6 +61,8 @@ interface WBS {
   costVariance: number | null;
   scheduleVariance: number | null;
   dayComplete: number | null;
+  urgency?: string;
+  priority?: number;
   description: string | null;
   _count?: { children: number; personels: number };
 }
@@ -71,6 +73,18 @@ const fields = [
   { key: "level", label: "سطح", type: "number" as const, required: true, placeholder: "1", helpText: "هنگام تغییر والد، سطح به‌طور خودکار محاسبه می‌شود. در صورت نیاز می‌توانید سطح را دستی تنظیم کنید." },
   { key: "parentId", label: "کد والد", type: "select" as const, options: [] as any, placeholder: "انتخاب والد" },
   { key: "requiredOrgPositionId", label: "سمت سازمانی مورد نیاز", type: "select" as const, options: [] as any, helpText: "سمت سازمانی که باید این فعالیت را انجام دهد" },
+  {
+    key: "urgency",
+    label: "فوریت",
+    type: "select" as const,
+    options: [
+      { value: "low", label: "کم" },
+      { value: "normal", label: "عادی" },
+      { value: "high", label: "زیاد" },
+      { value: "urgent", label: "فوری" },
+    ],
+  },
+  { key: "priority", label: "اولویت (1-5)", type: "number" as const, min: 1, max: 5, helpText: "عددی بین ۱ تا ۵" },
   { key: "durationDays", label: "مدت (روز)", type: "number" as const },
   { key: "progressPlan", label: "پیشرفت برنامه‌ریزی شده (%)", type: "number" as const, placeholder: "0-100" },
   { key: "progressActual", label: "پیشرفت واقعی (%)", type: "number" as const, placeholder: "0-100" },
@@ -505,6 +519,8 @@ export default function WBSPage() {
         durationDays: 0,
         progressPlan: 0,
         progressActual: 0,
+        urgency: "normal",
+        priority: 3,
         hrPlan: [],
         hrActual: [],
       };

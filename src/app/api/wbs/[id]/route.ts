@@ -193,6 +193,8 @@ export async function PUT(
         scheduleVariance: data.scheduleVariance ?? existing.scheduleVariance,
         dayComplete: data.dayComplete ?? existing.dayComplete,
         requiredOrgPositionId: data.requiredOrgPositionId === undefined ? existing.requiredOrgPositionId : (data.requiredOrgPositionId || null),
+        urgency: data.urgency ?? existing.urgency,
+        priority: data.priority ?? existing.priority,
         description: data.description ?? existing.description,
       },
     });

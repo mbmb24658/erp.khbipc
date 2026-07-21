@@ -155,6 +155,8 @@ export async function POST(req: NextRequest) {
         scheduleVariance: data.scheduleVariance ?? null,
         dayComplete: data.dayComplete ?? null,
         requiredOrgPositionId: data.requiredOrgPositionId || null,
+        urgency: data.urgency || "normal",
+        priority: data.priority ?? 3,
         description: data.description || null,
       },
     });

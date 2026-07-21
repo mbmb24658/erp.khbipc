@@ -200,6 +200,8 @@ export async function POST(req: NextRequest) {
       const durationRaw = row["مدت زمان (روز)"];
       const planPctRaw = row["درصد پیشرفت برنامه (%)"];
       const actualPctRaw = row["درصد پیشرفت واقعی (%)"];
+      const urgencyRaw = row["فوریت"];
+      const priorityRaw = row["اولویت (1-5)"];
       const startDateRaw = row["تاریخ شروع"];
       const finishDateRaw = row["تاریخ پایان"];
       const requiredOrgPosText = row["سمت سازمانی مورد نیاز"];
@@ -246,6 +248,20 @@ export async function POST(req: NextRequest) {
       const durationDays = durationRaw === null || durationRaw === undefined || durationRaw === ""
         ? 0
         : (Number(durationRaw) || 0);
+
+      // Parse urgency (default: normal)
+      const validUrgencies = ["low", "normal", "high", "urgent"];
+      const urgencyRawStr = String(urgencyRaw ?? "").trim().toLowerCase();
+      const urgency = validUrgencies.includes(urgencyRawStr) ? urgencyRawStr : "normal";
+
+      // Parse priority (default: 3, valid 1-5)
+      let priority = 3;
+      if (priorityRaw !== null && priorityRaw !== undefined && priorityRaw !== "") {
+        const p = Number(priorityRaw);
+        if (!isNaN(p) && p >= 1 && p <= 5) {
+          priority = Math.round(p);
+        }
+      }
 
       // Parse dates (Jalali → Gregorian)
       const startDate = parseJalaliToDate(startDateRaw);
@@ -339,6 +355,8 @@ export async function POST(req: NextRequest) {
               durationDays,
               progressPlan: planPct !== null ? planPct / 100 : 0,
               progressActual: actualPct !== null ? actualPct / 100 : 0,
+              urgency,
+              priority,
               startDate,
               finishDate,
               startDateJalali: startDate ? formatJalaliLocal(startDate) : null,
@@ -364,6 +382,8 @@ export async function POST(req: NextRequest) {
               durationDays,
               progressPlan: planPct !== null ? planPct / 100 : 0,
               progressActual: actualPct !== null ? actualPct / 100 : 0,
+              urgency,
+              priority,
               startDate,
               finishDate,
               startDateJalali: startDate ? formatJalaliLocal(startDate) : null,

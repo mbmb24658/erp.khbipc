@@ -41,6 +41,8 @@ model WBS {
   // Required org position for this activity (سمت سازمانی مورد نیاز)
   requiredOrgPositionId String?
   requiredOrgPosition   OrgChart? @relation("WBSRequiredOrgPosition", fields: [requiredOrgPositionId], references: [id], onDelete: SetNull)
+  urgency         String   @default("normal")
+  priority        Int      @default(3)
   // Metadata
   description     String?
   createdAt       DateTime @default(now())

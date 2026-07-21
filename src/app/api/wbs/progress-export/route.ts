@@ -87,6 +87,8 @@ export async function GET() {
       requiredOrgPositionId: true,
       hrPlan: true,
       hrActual: true,
+      urgency: true,
+      priority: true,
       description: true,
     },
   });
@@ -140,6 +142,8 @@ export async function GET() {
     "مدت زمان (روز)": w.durationDays,
     "درصد پیشرفت برنامه (%)": Math.round(w.progressPlan * 10000) / 100,
     "درصد پیشرفت واقعی (%)": Math.round(w.progressActual * 10000) / 100,
+    "فوریت": w.urgency || "normal",
+    "اولویت (1-5)": w.priority ?? 3,
     "تاریخ شروع": formatJalali(w.startDate),
     "تاریخ پایان": formatJalali(w.finishDate),
     "سمت سازمانی مورد نیاز": w.requiredOrgPositionId
@@ -166,6 +170,8 @@ export async function GET() {
     { wch: 14 }, // مدت زمان (روز)
     { wch: 20 }, // درصد برنامه
     { wch: 20 }, // درصد واقعی
+    { wch: 12 }, // فوریت
+    { wch: 14 }, // اولویت (1-5)
     { wch: 14 }, // تاریخ شروع
     { wch: 14 }, // تاریخ پایان
     { wch: 25 }, // سمت سازمانی مورد نیاز
@@ -180,6 +186,10 @@ export async function GET() {
     const pctRange = `F2:G${rows.length + 1}`;
     // Level column = D, validate 1-7
     const levelRange = `D2:D${rows.length + 1}`;
+    // Urgency column = H, list of allowed values
+    const urgencyRange = `H2:H${rows.length + 1}`;
+    // Priority column = I, whole number 1-5
+    const priorityRange = `I2:I${rows.length + 1}`;
     ws["!dataValidations"] = [
       {
         type: "decimal",
@@ -202,6 +212,26 @@ export async function GET() {
         showErrorMessage: true,
         errorTitle: "سطح نامعتبر",
         error: "سطح باید عدد صحیح بین ۱ تا ۷ باشد",
+      },
+      {
+        type: "list",
+        formula1: '"low,normal,high,urgent"',
+        sqref: urgencyRange,
+        allowBlank: true,
+        showErrorMessage: true,
+        errorTitle: "فوریت نامعتبر",
+        error: "مقدار باید یکی از low, normal, high, urgent باشد",
+      },
+      {
+        type: "whole",
+        operator: "between",
+        formula1: "1",
+        formula2: "5",
+        sqref: priorityRange,
+        allowBlank: true,
+        showErrorMessage: true,
+        errorTitle: "اولویت نامعتبر",
+        error: "اولویت باید عدد صحیح بین ۱ تا ۵ باشد",
       },
     ];
   }

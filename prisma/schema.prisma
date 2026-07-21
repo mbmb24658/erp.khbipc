@@ -29,6 +29,8 @@ model WBS {
   hrActual              String?
   dayComplete           Float?
   requiredOrgPositionId String?
+  urgency               String   @default("normal")
+  priority              Int      @default(3)
   description           String?
   createdAt             DateTime             @default(now())
   updatedAt             DateTime             @updatedAt

@@ -7,6 +7,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { DataTable, PageHeader, type Column } from "@/components/data-table";
 import { EditDialog, ConfirmDialog, type FormField } from "@/components/edit-dialog";
 import { notifySuccess, notifyError } from "@/lib/notify";
+import { formatJalali, formatJalaliDateTime } from "@/lib/jalali";
 import {
   Plus,
   Users as UsersIcon,
@@ -215,8 +216,7 @@ function UsersTab() {
     {
       key: "lastLoginAt",
       label: "آخرین ورود",
-      render: (r) =>
-        r.lastLoginAt ? new Date(r.lastLoginAt).toLocaleString("fa-IR") : "-",
+      render: (r) => formatJalaliDateTime(r.lastLoginAt),
     },
   ];
 
@@ -694,7 +694,7 @@ function LogsTab() {
     {
       key: "createdAt",
       label: "تاریخ",
-      render: (r) => new Date(r.createdAt).toLocaleString("fa-IR"),
+      render: (r) => formatJalaliDateTime(r.createdAt),
     },
   ];
 

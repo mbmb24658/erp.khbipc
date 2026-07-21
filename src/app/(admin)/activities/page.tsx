@@ -45,6 +45,7 @@ import {
   LayoutGrid,
   ChevronDown,
 } from "lucide-react";
+import { formatJalali } from "@/lib/jalali";
 
 interface Personel {
   id: string;
@@ -687,8 +688,8 @@ export default function ActivitiesPage() {
                   <div className="flex items-center justify-between text-xs text-muted-foreground pt-2 border-t">
                     <span className="flex items-center gap-1">
                       <Calendar className="w-3 h-3" />
-                      {a.startDate ? new Date(a.startDate).toLocaleDateString("fa-IR") : "-"}
-                      {a.endDate ? ` تا ${new Date(a.endDate).toLocaleDateString("fa-IR")}` : ""}
+                      {formatJalali(a.startDate)}
+                      {a.endDate ? ` تا ${formatJalali(a.endDate)}` : ""}
                     </span>
                     {a.durationDays != null && (
                       <span className="font-num">{a.durationDays.toLocaleString("fa-IR")} روز</span>

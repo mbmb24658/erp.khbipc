@@ -51,6 +51,53 @@ export async function PUT(
     if (dup) return NextResponse.json({ error: "کد فعالیت تکراری است" }, { status: 400 });
   }
 
+  // ----- Auto-link hrPlan → hrActual -----
+  // If hrPlan is explicitly provided in the PUT, find personnel assigned to
+  // those org positions and merge them into hrActual (preserving existing).
+  let finalHrActual = data.hrActual === undefined ? existing.hrActual : (data.hrActual || null);
+  let hrActualIds: string[] = [];
+  if (data.hrPlan !== undefined && data.hrPlan) {
+    try {
+      const orgPositionIds: string[] = JSON.parse(data.hrPlan);
+      if (Array.isArray(orgPositionIds) && orgPositionIds.length > 0) {
+        const personnelInPositions = await db.personel.findMany({
+          where: { orgChartId: { in: orgPositionIds } },
+          select: { id: true },
+        });
+        let existingActual: string[] = [];
+        try {
+          const baseHrActual = data.hrActual !== undefined ? data.hrActual : existing.hrActual;
+          const parsed = baseHrActual ? JSON.parse(baseHrActual) : [];
+          if (Array.isArray(parsed)) existingActual = parsed;
+        } catch {
+          // ignore invalid JSON in hrActual
+        }
+        const merged = [...new Set([...existingActual, ...personnelInPositions.map((p) => p.id)])];
+        hrActualIds = merged;
+        if (merged.length > 0) {
+          finalHrActual = JSON.stringify(merged);
+        }
+      }
+    } catch {
+      // If hrPlan is not valid JSON, ignore the auto-link
+    }
+  } else if (data.hrActual !== undefined && data.hrActual) {
+    try {
+      const parsed = JSON.parse(data.hrActual);
+      if (Array.isArray(parsed)) hrActualIds = parsed;
+    } catch {
+      // ignore
+    }
+  } else if (data.hrActual === undefined && existing.hrActual) {
+    // No change to hrActual in this PUT — sync from existing.hrActual
+    try {
+      const parsed = JSON.parse(existing.hrActual);
+      if (Array.isArray(parsed)) hrActualIds = parsed;
+    } catch {
+      // ignore
+    }
+  }
+
   try {
     const a = await db.activity.update({
       where: { id },
@@ -68,10 +115,25 @@ export async function PUT(
         status: data.status ?? existing.status,
         progressPct: data.progressPct ?? existing.progressPct,
         hrPlan: data.hrPlan === undefined ? existing.hrPlan : (data.hrPlan || null),
-        hrActual: data.hrActual === undefined ? existing.hrActual : (data.hrActual || null),
+        hrActual: finalHrActual,
         notes: data.notes === undefined ? existing.notes : data.notes || null,
       },
     });
+
+    // Sync ActivityPerson records from the final hrActual (so they appear in personAssignments)
+    // Only sync when hrPlan was provided OR hrActual was explicitly changed.
+    if (data.hrPlan !== undefined || data.hrActual !== undefined) {
+      await db.activityPerson.deleteMany({ where: { activityId: a.id } });
+      for (const personelId of hrActualIds) {
+        try {
+          await db.activityPerson.create({
+            data: { activityId: a.id, personelId, role: "مسئول" },
+          });
+        } catch {
+          // Skip duplicates / invalid personelId
+        }
+      }
+    }
 
     await db.userLog.create({
       data: {

@@ -15,6 +15,7 @@ import {
   ClipboardList,
 } from "lucide-react";
 import { ActivityDetailClient, RemoveAssignmentClient } from "./activity-detail-client";
+import { formatJalali, formatJalaliDateTime } from "@/lib/jalali";
 
 export const dynamic = "force-dynamic";
 
@@ -128,7 +129,7 @@ export default async function ActivityDetailPage({
             <div>
               <p className="text-sm text-muted-foreground">شروع</p>
               <p className="text-sm font-bold">
-                {data.startDate ? new Date(data.startDate).toLocaleDateString("fa-IR") : "-"}
+                {formatJalali(data.startDate)}
               </p>
             </div>
           </CardContent>
@@ -139,7 +140,7 @@ export default async function ActivityDetailPage({
             <div>
               <p className="text-sm text-muted-foreground">پایان</p>
               <p className="text-sm font-bold">
-                {data.endDate ? new Date(data.endDate).toLocaleDateString("fa-IR") : "-"}
+                {formatJalali(data.endDate)}
               </p>
             </div>
           </CardContent>
@@ -305,7 +306,7 @@ export default async function ActivityDetailPage({
                       </Badge>
                     )}
                     <span className="text-muted-foreground mr-auto">
-                      {new Date(su.createdAt).toLocaleString("fa-IR")}
+                      {formatJalaliDateTime(su.createdAt)}
                     </span>
                   </div>
                   {su.personel && (

@@ -104,6 +104,35 @@ export async function POST(req: NextRequest) {
     ? `${parentHierarchyPath}/${data.wbsCode}`
     : data.wbsCode.split(".").join("/");
 
+  // ----- Auto-link hrPlan → hrActual -----
+  // If hrPlan (org position IDs) is provided, find personnel assigned to those
+  // org positions and merge them into hrActual (no duplicates).
+  let finalHrActual = data.hrActual || null;
+  if (data.hrPlan) {
+    try {
+      const orgPositionIds: string[] = JSON.parse(data.hrPlan);
+      if (Array.isArray(orgPositionIds) && orgPositionIds.length > 0) {
+        const personnelInPositions = await db.personel.findMany({
+          where: { orgChartId: { in: orgPositionIds } },
+          select: { id: true },
+        });
+        if (personnelInPositions.length > 0) {
+          let existingActual: string[] = [];
+          try {
+            const parsed = data.hrActual ? JSON.parse(data.hrActual) : [];
+            if (Array.isArray(parsed)) existingActual = parsed;
+          } catch {
+            // ignore invalid JSON in hrActual
+          }
+          const merged = [...new Set([...existingActual, ...personnelInPositions.map((p) => p.id)])];
+          finalHrActual = JSON.stringify(merged);
+        }
+      }
+    } catch {
+      // If hrPlan is not valid JSON, ignore the auto-link
+    }
+  }
+
   try {
     const wbs = await db.wBS.create({
       data: {
@@ -120,7 +149,7 @@ export async function POST(req: NextRequest) {
         startDateJalali: data.startDateJalali || null,
         finishDateJalali: data.finishDateJalali || null,
         hrPlan: data.hrPlan || null,
-        hrActual: data.hrActual || null,
+        hrActual: finalHrActual,
         actualCost: data.actualCost ?? null,
         costVariance: data.costVariance ?? null,
         scheduleVariance: data.scheduleVariance ?? null,

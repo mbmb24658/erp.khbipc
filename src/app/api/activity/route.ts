@@ -68,6 +68,44 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // ----- Auto-link hrPlan → hrActual -----
+  // If hrPlan (org position IDs) is provided, find personnel assigned to those
+  // org positions and merge them into hrActual (no duplicates).
+  let finalHrActual = data.hrActual || null;
+  let hrActualIds: string[] = [];
+  if (data.hrPlan) {
+    try {
+      const orgPositionIds: string[] = JSON.parse(data.hrPlan);
+      if (Array.isArray(orgPositionIds) && orgPositionIds.length > 0) {
+        const personnelInPositions = await db.personel.findMany({
+          where: { orgChartId: { in: orgPositionIds } },
+          select: { id: true },
+        });
+        let existingActual: string[] = [];
+        try {
+          const parsed = data.hrActual ? JSON.parse(data.hrActual) : [];
+          if (Array.isArray(parsed)) existingActual = parsed;
+        } catch {
+          // ignore invalid JSON in hrActual
+        }
+        const merged = [...new Set([...existingActual, ...personnelInPositions.map((p) => p.id)])];
+        hrActualIds = merged;
+        if (merged.length > 0) {
+          finalHrActual = JSON.stringify(merged);
+        }
+      }
+    } catch {
+      // If hrPlan is not valid JSON, ignore the auto-link
+    }
+  } else if (data.hrActual) {
+    try {
+      const parsed = JSON.parse(data.hrActual);
+      if (Array.isArray(parsed)) hrActualIds = parsed;
+    } catch {
+      // ignore
+    }
+  }
+
   try {
     const a = await db.activity.create({
       data: {
@@ -84,11 +122,26 @@ export async function POST(req: NextRequest) {
         status: data.status || "pending",
         progressPct: data.progressPct ?? 0,
         hrPlan: data.hrPlan || null,
-        hrActual: data.hrActual || null,
+        hrActual: finalHrActual,
         notes: data.notes || null,
         createdById: (session.user as any).id,
       },
     });
+
+    // Sync ActivityPerson records from hrActual (so they appear in personAssignments)
+    if (hrActualIds.length > 0) {
+      // Delete existing assignments (none for a new activity, but defensive)
+      await db.activityPerson.deleteMany({ where: { activityId: a.id } });
+      for (const personelId of hrActualIds) {
+        try {
+          await db.activityPerson.create({
+            data: { activityId: a.id, personelId, role: "مسئول" },
+          });
+        } catch {
+          // Skip duplicates / invalid personelId
+        }
+      }
+    }
 
     await db.userLog.create({
       data: {

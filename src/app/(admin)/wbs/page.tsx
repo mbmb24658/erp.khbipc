@@ -38,6 +38,7 @@ import {
   Trash2,
   Loader2,
 } from "lucide-react";
+import { formatJalali } from "@/lib/jalali";
 
 interface WBS {
   id: string;
@@ -327,12 +328,12 @@ export default function WBSPage() {
     {
       key: "startDate",
       label: "شروع",
-      render: (r) => r.startDate ? new Date(r.startDate).toLocaleDateString("fa-IR") : "-",
+      render: (r) => formatJalali(r.startDate),
     },
     {
       key: "finishDate",
       label: "پایان",
-      render: (r) => r.finishDate ? new Date(r.finishDate).toLocaleDateString("fa-IR") : "-",
+      render: (r) => formatJalali(r.finishDate),
     },
   ];
 

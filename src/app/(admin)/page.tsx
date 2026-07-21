@@ -2,46 +2,24 @@ import { db } from "@/lib/db";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import {
-  Target,
-  AlertTriangle,
-  Activity,
-  Calendar,
-  CheckCircle2,
-  Clock,
-} from "lucide-react";
+import { AlertTriangle } from "lucide-react";
 import Link from "next/link";
 import { SCurveChart } from "@/components/s-curve-chart";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { formatJalali } from "@/lib/jalali";
+import { UserDashboard as UserDashboardClient } from "./user-dashboard";
 
 export const dynamic = "force-dynamic";
 
-const urgencyMap: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
-  low: { label: "کم", variant: "secondary" },
-  normal: { label: "عادی", variant: "outline" },
-  high: { label: "زیاد", variant: "default" },
-  urgent: { label: "فوری", variant: "destructive" },
-};
-
-const statusMap: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
-  pending: { label: "در انتظار", variant: "secondary" },
-  in_progress: { label: "در حال انجام", variant: "default" },
-  completed: { label: "تکمیل شده", variant: "outline" },
-  cancelled: { label: "لغو شده", variant: "destructive" },
-  on_hold: { label: "متوقف", variant: "secondary" },
-};
-
-const urgencyWeight: Record<string, number> = {
-  urgent: 4,
-  high: 3,
-  normal: 2,
-  low: 1,
-};
-
 export default async function DashboardPage() {
   const session = await getServerSession(authOptions);
+  if (!session) {
+    return (
+      <div className="p-8 text-center text-muted-foreground">
+        لطفاً وارد شوید
+      </div>
+    );
+  }
   const role = (session?.user as any)?.role || "user";
   const userId = (session.user as any)?.id;
 
@@ -376,8 +354,19 @@ async function UserDashboard({ userId }: { userId: string }) {
     where: {
       personAssignments: { some: { personelId } },
     },
-    include: {
-      personAssignments: { include: { personel: true } },
+    select: {
+      id: true,
+      code: true,
+      title: true,
+      description: true,
+      startDate: true,
+      endDate: true,
+      durationDays: true,
+      urgency: true,
+      status: true,
+      progressPct: true,
+      priority: true,
+      updatedAt: true,
     },
     orderBy: [{ priority: "desc" }, { updatedAt: "desc" }],
   });
@@ -392,352 +381,23 @@ async function UserDashboard({ userId }: { userId: string }) {
     },
     select: { actionUrl: true },
   });
-  const notifActivityIds = new Set(
-    unreadNotifs
-      .map((n) => n.actionUrl?.split("/activities/")[1])
-      .filter((x): x is string => !!x)
-  );
+  const notifActivityIds = unreadNotifs
+    .map((n) => n.actionUrl?.split("/activities/")[1])
+    .filter((x): x is string => !!x);
 
-  // Date helpers
-  const now = new Date();
-  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
-
-  // Persian week starts on Saturday. daysSinceSaturday: Sat=0, Sun=1, ... Fri=6
-  const daysSinceSaturday = (now.getDay() + 1) % 7;
-  const weekStart = new Date(startOfToday);
-  weekStart.setDate(weekStart.getDate() - daysSinceSaturday);
-  const weekEnd = new Date(weekStart);
-  weekEnd.setDate(weekEnd.getDate() + 7); // exclusive end (start of next Saturday)
-
-  const hasUnreadNotif = (aId: string) => notifActivityIds.has(aId);
-
-  // "Today" = (startDate <= today < endDate-tomorrow) i.e. today is within [start, end]
-  //   OR past due (endDate < today) and not completed/cancelled
-  const todayActivities = assignedActivities.filter((a) => {
-    const s = a.startDate ? new Date(a.startDate) : null;
-    const e = a.endDate ? new Date(a.endDate) : null;
-    const active = a.status !== "completed" && a.status !== "cancelled";
-    if (s && e) {
-      // today overlaps [start, end]
-      if (s <= endOfToday && e >= startOfToday) return true;
-      // past due & active
-      if (e < startOfToday && active) return true;
-      return false;
-    }
-    if (e) {
-      // only end date — due today or past due & active
-      if (e >= startOfToday && e < endOfToday) return true;
-      if (e < startOfToday && active) return true;
-      return false;
-    }
-    if (s) {
-      // only start date — started today
-      return s >= startOfToday && s < endOfToday;
-    }
-    return false;
-  });
-
-  // "This week" = activity's [start, end] overlaps [weekStart, weekEnd),
-  //   excluding the ones already counted in today (to avoid duplication)
-  const todayIds = new Set(todayActivities.map((a) => a.id));
-  const weekActivities = assignedActivities.filter((a) => {
-    if (todayIds.has(a.id)) return false;
-    const s = a.startDate ? new Date(a.startDate) : null;
-    const e = a.endDate ? new Date(a.endDate) : null;
-    if (!s && !e) return false;
-    const start = s || e!;
-    const end = e || s!;
-    return start < weekEnd && end >= weekStart;
-  });
-
-  // Top 10 by priority (urgency weight + priority)
-  const topPriority = [...assignedActivities]
-    .filter((a) => a.status !== "completed" && a.status !== "cancelled")
-    .sort((a, b) => {
-      const ua = urgencyWeight[a.urgency] || 2;
-      const ub = urgencyWeight[b.urgency] || 2;
-      const scoreA = ua * 10 + (a.priority || 0);
-      const scoreB = ub * 10 + (b.priority || 0);
-      return scoreB - scoreA;
-    })
-    .slice(0, 10);
-
-  const totalAssigned = assignedActivities.length;
-  const completedCount = assignedActivities.filter(
-    (a) => a.status === "completed"
-  ).length;
-  const overdueCount = assignedActivities.filter((a) => {
-    if (a.status === "completed" || a.status === "cancelled") return false;
-    return a.endDate ? new Date(a.endDate) < startOfToday : false;
-  }).length;
+  // Serialize dates for the client component
+  const serialized = assignedActivities.map((a) => ({
+    ...a,
+    startDate: a.startDate ? a.startDate.toISOString() : null,
+    endDate: a.endDate ? a.endDate.toISOString() : null,
+    updatedAt: a.updatedAt.toISOString(),
+  }));
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold">سلام، {personName}</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            آنچه باید امروز و این هفته انجام دهید
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <Badge variant="secondary" className="gap-1 px-3 py-1.5 text-xs">
-            <Activity className="w-3.5 h-3.5" />
-            کل فعالیت‌ها: <span className="font-num font-bold">{totalAssigned.toLocaleString("fa-IR")}</span>
-          </Badge>
-          <Badge variant="outline" className="gap-1 px-3 py-1.5 text-xs">
-            <CheckCircle2 className="w-3.5 h-3.5" />
-            تکمیل شده: <span className="font-num font-bold">{completedCount.toLocaleString("fa-IR")}</span>
-          </Badge>
-          {overdueCount > 0 && (
-            <Badge variant="destructive" className="gap-1 px-3 py-1.5 text-xs">
-              <AlertTriangle className="w-3.5 h-3.5" />
-              عقب‌افتاده: <span className="font-num font-bold">{overdueCount.toLocaleString("fa-IR")}</span>
-            </Badge>
-          )}
-        </div>
-      </div>
-
-      {/* Today's activities */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base flex items-center gap-2">
-            <Clock className="w-4 h-4 text-amber-600" />
-            فعالیت‌های امروز
-            <Badge variant="secondary" className="font-num text-xs">
-              {todayActivities.length.toLocaleString("fa-IR")}
-            </Badge>
-          </CardTitle>
-          <p className="text-xs text-muted-foreground">
-            فعالیت‌هایی که امروز در بازه زمانی آن‌ها هستید یا از موعد آن‌ها گذشته است
-          </p>
-        </CardHeader>
-        <CardContent>
-          {todayActivities.length === 0 ? (
-            <p className="text-sm text-muted-foreground text-center py-8">
-              فعالیتی برای امروز ندارید
-            </p>
-          ) : (
-            <div className="grid gap-3 md:grid-cols-2">
-              {todayActivities.map((a) => (
-                <ActivityCard
-                  key={a.id}
-                  activity={a}
-                  hasUnreadNotif={hasUnreadNotif(a.id)}
-                  overdue={
-                    !!a.endDate &&
-                    new Date(a.endDate) < startOfToday &&
-                    a.status !== "completed" &&
-                    a.status !== "cancelled"
-                  }
-                />
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* This week's activities */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base flex items-center gap-2">
-            <Calendar className="w-4 h-4 text-blue-600" />
-            فعالیت‌های این هفته
-            <Badge variant="secondary" className="font-num text-xs">
-              {weekActivities.length.toLocaleString("fa-IR")}
-            </Badge>
-          </CardTitle>
-          <p className="text-xs text-muted-foreground">
-            فعالیت‌هایی که در جریان این هفته (شنبه تا جمعه) برنامه‌ریزی شده‌اند
-          </p>
-        </CardHeader>
-        <CardContent>
-          {weekActivities.length === 0 ? (
-            <p className="text-sm text-muted-foreground text-center py-8">
-              در این هفته فعالیتی ندارید
-            </p>
-          ) : (
-            <div className="grid gap-3 md:grid-cols-2">
-              {weekActivities.map((a) => (
-                <ActivityCard
-                  key={a.id}
-                  activity={a}
-                  hasUnreadNotif={hasUnreadNotif(a.id)}
-                  overdue={
-                    !!a.endDate &&
-                    new Date(a.endDate) < startOfToday &&
-                    a.status !== "completed" &&
-                    a.status !== "cancelled"
-                  }
-                />
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Top 10 by priority */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base flex items-center gap-2">
-            <Target className="w-4 h-4 text-rose-600" />
-            ۱۰ فعالیت با بالاترین اولویت
-            <Badge variant="secondary" className="font-num text-xs">
-              {topPriority.length.toLocaleString("fa-IR")}
-            </Badge>
-          </CardTitle>
-          <p className="text-xs text-muted-foreground">
-            بر اساس فوریت و اولویت — ابتدا فوری‌ترین‌ها
-          </p>
-        </CardHeader>
-        <CardContent>
-          {topPriority.length === 0 ? (
-            <p className="text-sm text-muted-foreground text-center py-8">
-              همه فعالیت‌های شما تکمیل شده‌اند
-            </p>
-          ) : (
-            <div className="space-y-2">
-              {topPriority.map((a, idx) => (
-                <ActivityRow
-                  key={a.id}
-                  activity={a}
-                  rank={idx + 1}
-                  hasUnreadNotif={hasUnreadNotif(a.id)}
-                  overdue={
-                    !!a.endDate &&
-                    new Date(a.endDate) < startOfToday
-                  }
-                />
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-    </div>
-  );
-}
-
-// ---- Activity card (grid layout for today/week sections) ----
-function ActivityCard({
-  activity,
-  hasUnreadNotif,
-  overdue,
-}: {
-  activity: {
-    id: string;
-    code: string;
-    title: string;
-    startDate: Date | string | null;
-    endDate: Date | string | null;
-    urgency: string;
-    status: string;
-    progressPct: number;
-  };
-  hasUnreadNotif: boolean;
-  overdue: boolean;
-}) {
-  const us = urgencyMap[activity.urgency] || { label: activity.urgency, variant: "secondary" as const };
-  const ss = statusMap[activity.status] || { label: activity.status, variant: "secondary" as const };
-  return (
-    <Link
-      href={`/activities/${activity.id}`}
-      className="block rounded-lg border p-3 hover:shadow-md hover:border-primary/40 transition-all relative"
-    >
-      {hasUnreadNotif && (
-        <span
-          className="absolute -top-1 -left-1 w-3 h-3 bg-red-500 rounded-full ring-2 ring-background"
-          title="اعلان جدید"
-          aria-label="اعلان جدید"
-        />
-      )}
-      <div className="flex items-start justify-between gap-2 mb-2">
-        <div className="flex items-center gap-2 min-w-0">
-          <Badge variant="outline" className="font-mono text-xs shrink-0">{activity.code}</Badge>
-          <Badge variant={us.variant} className="text-xs shrink-0">{us.label}</Badge>
-        </div>
-        <Badge variant={ss.variant} className="text-xs shrink-0">{ss.label}</Badge>
-      </div>
-      <h3 className="font-medium text-sm leading-snug line-clamp-2 mb-2">{activity.title}</h3>
-      <div className="space-y-1 mb-2">
-        <div className="flex justify-between text-xs">
-          <span className="text-muted-foreground">پیشرفت</span>
-          <span className="font-num font-medium">{Math.round(activity.progressPct).toLocaleString("fa-IR")}%</span>
-        </div>
-        <Progress value={activity.progressPct} className="h-1.5" />
-      </div>
-      <div className="flex items-center gap-1 text-xs text-muted-foreground">
-        <Calendar className="w-3 h-3" />
-        <span>{formatJalali(activity.startDate)}</span>
-        <span>تا</span>
-        <span className={overdue ? "text-red-600 font-medium" : ""}>{formatJalali(activity.endDate)}</span>
-        {overdue && (
-          <Badge variant="destructive" className="text-[10px] mr-1 px-1 py-0">عقب‌افتاده</Badge>
-        )}
-      </div>
-    </Link>
-  );
-}
-
-// ---- Compact activity row (for top-10 list) ----
-function ActivityRow({
-  activity,
-  rank,
-  hasUnreadNotif,
-  overdue,
-}: {
-  activity: {
-    id: string;
-    code: string;
-    title: string;
-    startDate: Date | string | null;
-    endDate: Date | string | null;
-    urgency: string;
-    status: string;
-    progressPct: number;
-    priority: number;
-  };
-  rank: number;
-  hasUnreadNotif: boolean;
-  overdue: boolean;
-}) {
-  const us = urgencyMap[activity.urgency] || { label: activity.urgency, variant: "secondary" as const };
-  const ss = statusMap[activity.status] || { label: activity.status, variant: "secondary" as const };
-  return (
-    <Link
-      href={`/activities/${activity.id}`}
-      className="flex items-center gap-3 p-3 rounded-lg border hover:bg-muted/50 transition-colors relative"
-    >
-      {hasUnreadNotif && (
-        <span
-          className="absolute top-2 left-2 w-2.5 h-2.5 bg-red-500 rounded-full"
-          title="اعلان جدید"
-          aria-label="اعلان جدید"
-        />
-      )}
-      <span className="w-7 h-7 rounded-full bg-muted flex items-center justify-center text-xs font-bold font-num shrink-0">
-        {rank.toLocaleString("fa-IR")}
-      </span>
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2 mb-0.5">
-          <Badge variant="outline" className="font-mono text-[10px] shrink-0">{activity.code}</Badge>
-          <span className="text-sm font-medium truncate">{activity.title}</span>
-        </div>
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <Calendar className="w-3 h-3" />
-          <span>{formatJalali(activity.startDate)}</span>
-          <span>تا</span>
-          <span className={overdue ? "text-red-600 font-medium" : ""}>{formatJalali(activity.endDate)}</span>
-        </div>
-      </div>
-      <div className="flex items-center gap-1.5 shrink-0">
-        <Badge variant={us.variant} className="text-[10px]">{us.label}</Badge>
-        <Badge variant={ss.variant} className="text-[10px]">{ss.label}</Badge>
-        <span className="font-num text-xs font-bold w-10 text-center">
-          {Math.round(activity.progressPct).toLocaleString("fa-IR")}%
-        </span>
-      </div>
-    </Link>
+    <UserDashboardClient
+      activities={serialized}
+      personName={personName}
+      notifActivityIds={notifActivityIds}
+    />
   );
 }

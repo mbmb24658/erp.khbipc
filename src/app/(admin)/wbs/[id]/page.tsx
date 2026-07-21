@@ -16,6 +16,7 @@ import {
   TrendingUp,
 } from "lucide-react";
 import { WBSDetailClient } from "./wbs-detail-client";
+import { formatJalali, formatJalaliLong } from "@/lib/jalali";
 
 export const dynamic = "force-dynamic";
 
@@ -136,7 +137,7 @@ export default async function WBSDetailPage({
               <div>
                 <p className="text-sm text-muted-foreground">شروع</p>
                 <p className="text-sm font-bold">
-                  {wbs.startDate ? new Date(wbs.startDate).toLocaleDateString("fa-IR") : "-"}
+                  {formatJalali(wbs.startDate)}
                 </p>
               </div>
             </CardContent>
@@ -147,7 +148,7 @@ export default async function WBSDetailPage({
               <div>
                 <p className="text-sm text-muted-foreground">پایان</p>
                 <p className="text-sm font-bold">
-                  {wbs.finishDate ? new Date(wbs.finishDate).toLocaleDateString("fa-IR") : "-"}
+                  {formatJalali(wbs.finishDate)}
                 </p>
               </div>
             </CardContent>
@@ -307,7 +308,7 @@ export default async function WBSDetailPage({
                     {wbs.monthlyProgress.map((m) => (
                       <tr key={m.id} className="border-b last:border-0">
                         <td className="py-2 px-2">
-                          {new Date(m.monthDate).toLocaleDateString("fa-IR", { year: "numeric", month: "long" })}
+                          {formatJalaliLong(m.monthDate)}
                         </td>
                         <td className="py-2 px-2 text-left font-num">
                           {Math.round(m.plannedPct * 100).toLocaleString("fa-IR")}%

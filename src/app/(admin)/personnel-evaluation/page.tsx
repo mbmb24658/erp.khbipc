@@ -24,6 +24,7 @@ import {
 import { PageHeader } from "@/components/data-table";
 import { ConfirmDialog, EditDialog, type FormField } from "@/components/edit-dialog";
 import { notifySuccess, notifyError } from "@/lib/notify";
+import { formatJalali, formatJalaliDateTime } from "@/lib/jalali";
 import { useSession } from "next-auth/react";
 import {
   Target,
@@ -662,7 +663,7 @@ function EvaluationsTab({ canManage }: { canManage: boolean }) {
                         ) : "-"}
                       </td>
                       <td className="p-3 text-xs text-muted-foreground">
-                        {new Date(e.evaluatedAt).toLocaleDateString("fa-IR")}
+                        {formatJalali(e.evaluatedAt)}
                       </td>
                       {canManage && (
                         <td className="p-3 text-left">

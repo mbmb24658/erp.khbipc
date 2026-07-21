@@ -138,6 +138,38 @@ export async function PUT(
     hierarchyPath = newWbsCode.split(".").join("/");
   }
 
+  // ----- Auto-link hrPlan → hrActual -----
+  // If hrPlan is explicitly provided in the PUT, find personnel assigned to
+  // those org positions and merge them into hrActual (preserving existing).
+  let finalHrActual = data.hrActual === undefined ? existing.hrActual : (data.hrActual || null);
+  if (data.hrPlan !== undefined && data.hrPlan) {
+    try {
+      const orgPositionIds: string[] = JSON.parse(data.hrPlan);
+      if (Array.isArray(orgPositionIds) && orgPositionIds.length > 0) {
+        const personnelInPositions = await db.personel.findMany({
+          where: { orgChartId: { in: orgPositionIds } },
+          select: { id: true },
+        });
+        if (personnelInPositions.length > 0) {
+          let existingActual: string[] = [];
+          try {
+            const baseHrActual = data.hrActual !== undefined ? data.hrActual : existing.hrActual;
+            const parsed = baseHrActual ? JSON.parse(baseHrActual) : [];
+            if (Array.isArray(parsed)) existingActual = parsed;
+          } catch {
+            // ignore invalid JSON in hrActual
+          }
+          const merged = [...new Set([...existingActual, ...personnelInPositions.map((p) => p.id)])];
+          finalHrActual = JSON.stringify(merged);
+        }
+      }
+    } catch {
+      // If hrPlan is not valid JSON, ignore the auto-link
+    }
+  } else if (data.hrPlan === null || data.hrPlan === "") {
+    // hrPlan explicitly cleared — leave hrActual as-is (don't auto-strip)
+  }
+
   try {
     const wbs = await db.wBS.update({
       where: { id },
@@ -154,8 +186,8 @@ export async function PUT(
         finishDate: data.finishDate ? new Date(data.finishDate) : data.finishDate === null ? null : existing.finishDate,
         startDateJalali: data.startDateJalali ?? existing.startDateJalali,
         finishDateJalali: data.finishDateJalali ?? existing.finishDateJalali,
-        hrPlan: data.hrPlan ?? existing.hrPlan,
-        hrActual: data.hrActual ?? existing.hrActual,
+        hrPlan: data.hrPlan === undefined ? existing.hrPlan : (data.hrPlan || null),
+        hrActual: finalHrActual,
         actualCost: data.actualCost ?? existing.actualCost,
         costVariance: data.costVariance ?? existing.costVariance,
         scheduleVariance: data.scheduleVariance ?? existing.scheduleVariance,

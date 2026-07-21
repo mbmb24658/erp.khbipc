@@ -9,6 +9,7 @@ import { DataTable, PageHeader, type Column } from "@/components/data-table";
 import { EditDialog, ConfirmDialog, type FormField } from "@/components/edit-dialog";
 import { notifySuccess, notifyError } from "@/lib/notify";
 import { Plus, Bell, FileText, Settings as SettingsIcon, MailCheck } from "lucide-react";
+import { formatJalaliDateTime } from "@/lib/jalali";
 
 interface Notification {
   id: string;
@@ -213,7 +214,7 @@ export default function NotificationsPage() {
     {
       key: "createdAt",
       label: "تاریخ",
-      render: (r) => new Date(r.createdAt).toLocaleString("fa-IR"),
+      render: (r) => formatJalaliDateTime(r.createdAt),
     },
   ];
 

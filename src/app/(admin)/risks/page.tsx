@@ -9,6 +9,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { DataTable, PageHeader, type Column } from "@/components/data-table";
 import { EditDialog, ConfirmDialog, type FormField } from "@/components/edit-dialog";
 import { notifySuccess, notifyError } from "@/lib/notify";
+import { formatJalali, formatJalaliDateTime } from "@/lib/jalali";
 import {
   Plus,
   AlertTriangle,
@@ -341,7 +342,7 @@ export default function RisksPage() {
     {
       key: "dueDate",
       label: "سررسید",
-      render: (r) => r.dueDate ? new Date(r.dueDate).toLocaleDateString("fa-IR") : "-",
+      render: (r) => formatJalali(r.dueDate),
     },
   ];
 
@@ -356,7 +357,7 @@ export default function RisksPage() {
     {
       key: "changeDate",
       label: "تاریخ تغییر",
-      render: (r) => new Date(r.changeDate).toLocaleString("fa-IR"),
+      render: (r) => formatJalaliDateTime(r.changeDate),
     },
     { key: "changeType", label: "نوع تغییر", render: (r) => r.changeType || "-" },
     {
@@ -425,7 +426,7 @@ export default function RisksPage() {
     {
       key: "evaluatedAt",
       label: "تاریخ ارزیابی",
-      render: (r) => new Date(r.evaluatedAt).toLocaleDateString("fa-IR"),
+      render: (r) => formatJalali(r.evaluatedAt),
     },
   ];
 

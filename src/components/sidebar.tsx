@@ -73,9 +73,29 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
   const { data: session } = useSession();
   const userRole = (session?.user as any)?.role || "user";
+  const moduleAccess = (session?.user as any)?.moduleAccess as string | null | undefined;
 
-  // Filter nav items based on user role
-  const visibleItems = navItems.filter((item) => item.roles.includes(userRole));
+  // Filter nav items:
+  // - Admin always sees everything
+  // - If moduleAccess is set (non-null array), show only those modules (override role-based defaults)
+  // - If moduleAccess is null/undefined, use role-based filtering
+  const visibleItems = navItems.filter((item) => {
+    if (userRole === "admin") return true;
+    if (moduleAccess !== null && moduleAccess !== undefined) {
+      // moduleAccess is a JSON string; parse it
+      try {
+        const allowed: string[] = JSON.parse(moduleAccess);
+        if (!Array.isArray(allowed)) return item.roles.includes(userRole);
+        // Special case: financial-dashboard and financial are linked
+        if (item.href === "/financial-dashboard" && allowed.includes("/financial")) return true;
+        if (item.href === "/financial" && allowed.includes("/financial-dashboard")) return true;
+        return allowed.includes(item.href);
+      } catch {
+        return item.roles.includes(userRole);
+      }
+    }
+    return item.roles.includes(userRole);
+  });
 
   // Determine active state — special case: financial and financial-dashboard are linked
   const isItemActive = (item: typeof navItems[0]) => {

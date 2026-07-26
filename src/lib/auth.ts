@@ -39,7 +39,7 @@ export const authOptions: NextAuthOptions = {
           }
           await db.user.update({
             where: { id: user.id },
-            data: { lastLoginAt: new Date() },
+            data: { lastLoginAt: new Date(), lastActivityAt: new Date() },
           });
           console.log("[auth] SUCCESS - returning user");
           return {
@@ -48,6 +48,7 @@ export const authOptions: NextAuthOptions = {
             email: user.email || undefined,
             role: user.role?.name || "user",
             username: user.username,
+            moduleAccess: user.moduleAccess,
           } as any;
         } catch (e: any) {
           console.error("[auth] ERROR:", e.message);
@@ -63,6 +64,7 @@ export const authOptions: NextAuthOptions = {
       if (user) {
         token.role = (user as any).role;
         token.username = (user as any).username;
+        token.moduleAccess = (user as any).moduleAccess;
       }
       return token;
     },
@@ -71,6 +73,7 @@ export const authOptions: NextAuthOptions = {
         (session.user as any).role = token.role;
         (session.user as any).username = token.username;
         (session.user as any).id = token.sub;
+        (session.user as any).moduleAccess = token.moduleAccess;
       }
       return session;
     },

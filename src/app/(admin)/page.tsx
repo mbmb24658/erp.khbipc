@@ -371,6 +371,61 @@ async function UserDashboard({ userId }: { userId: string }) {
     orderBy: [{ priority: "desc" }, { updatedAt: "desc" }],
   });
 
+  // Fetch WBS activities assigned to this user (via hrActual JSON array)
+  // Only levels >= 4 (processes and below — actual activities, not vision/strategy)
+  // and only items that have a startDate or finishDate
+  const allWbs = await db.wBS.findMany({
+    where: {
+      level: { gte: 4 },
+      OR: [{ startDate: { not: null } }, { finishDate: { not: null } }],
+    },
+    select: {
+      id: true,
+      wbsCode: true,
+      title: true,
+      startDate: true,
+      finishDate: true,
+      progressPlan: true,
+      progressActual: true,
+      urgency: true,
+      priority: true,
+      hrActual: true,
+      updatedAt: true,
+    },
+  });
+
+  // Filter WBS where user's personelId is in hrActual JSON array
+  const userWbsActivities = allWbs
+    .filter((w) => {
+      if (!w.hrActual) return false;
+      try {
+        const ids: string[] = JSON.parse(w.hrActual);
+        return Array.isArray(ids) && ids.includes(personelId);
+      } catch {
+        return false;
+      }
+    })
+    .map((w) => ({
+      id: w.id,
+      code: w.wbsCode,
+      title: w.title,
+      description: null as string | null,
+      startDate: w.startDate ? w.startDate.toISOString() : null,
+      endDate: w.finishDate ? w.finishDate.toISOString() : null,
+      durationDays: null as number | null,
+      urgency: w.urgency || "normal",
+      priority: w.priority ?? 3,
+      status:
+        w.progressActual >= 1
+          ? "completed"
+          : w.progressActual > 0
+          ? "in_progress"
+          : "pending",
+      progressPct: (w.progressActual || 0) * 100,
+      updatedAt: w.updatedAt.toISOString(),
+      type: "pms" as const,
+    }));
+
   // Fetch unread notifications for this user linked to activities
   // (notifications use actionUrl = /activities/{activityId})
   const unreadNotifs = await db.notification.findMany({
@@ -385,13 +440,18 @@ async function UserDashboard({ userId }: { userId: string }) {
     .map((n) => n.actionUrl?.split("/activities/")[1])
     .filter((x): x is string => !!x);
 
-  // Serialize dates for the client component
-  const serialized = assignedActivities.map((a) => ({
-    ...a,
-    startDate: a.startDate ? a.startDate.toISOString() : null,
-    endDate: a.endDate ? a.endDate.toISOString() : null,
-    updatedAt: a.updatedAt.toISOString(),
-  }));
+  // Serialize dates for the client component — merge Activity records
+  // (marked "activity") with WBS-derived activities (marked "pms").
+  const serialized = [
+    ...assignedActivities.map((a) => ({
+      ...a,
+      startDate: a.startDate ? a.startDate.toISOString() : null,
+      endDate: a.endDate ? a.endDate.toISOString() : null,
+      updatedAt: a.updatedAt.toISOString(),
+      type: "activity" as const,
+    })),
+    ...userWbsActivities,
+  ];
 
   return (
     <UserDashboardClient

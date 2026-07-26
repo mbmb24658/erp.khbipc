@@ -3,7 +3,17 @@ import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogDescription,
+} from "@/components/ui/dialog";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { DataTable, PageHeader, type Column } from "@/components/data-table";
 import { EditDialog, ConfirmDialog, type FormField } from "@/components/edit-dialog";
 import { notifySuccess, notifyError } from "@/lib/notify";
@@ -16,7 +26,27 @@ import {
   ScrollText,
   Lock,
   Database,
+  LockKeyhole,
+  Loader2,
 } from "lucide-react";
+
+// All modules available for granular access control
+const ALL_MODULES: { path: string; label: string }[] = [
+  { path: "/", label: "داشبورد" },
+  { path: "/financial-dashboard", label: "داشبورد مالی" },
+  { path: "/wbs", label: "PMS جامع سازمان" },
+  { path: "/progress-update", label: "به‌روزرسانی پیشرفت" },
+  { path: "/hr", label: "منابع انسانی" },
+  { path: "/financial", label: "مدیریت مالی" },
+  { path: "/assets", label: "دارایی‌ها" },
+  { path: "/executors", label: "مجریان" },
+  { path: "/activities", label: "فعالیت‌های جاری" },
+  { path: "/kpi", label: "ارزیابی عملکرد (KPI)" },
+  { path: "/personnel-evaluation", label: "ارزیابی پرسنل" },
+  { path: "/risks", label: "مدیریت ریسک" },
+  { path: "/issues", label: "نظام مسائل" },
+  { path: "/notifications", label: "اعلان‌ها" },
+];
 
 interface Role {
   id: string;
@@ -126,6 +156,12 @@ function UsersTab() {
   const [editing, setEditing] = useState<User | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState<User | null>(null);
+  // Module access dialog state
+  const [accessOpen, setAccessOpen] = useState(false);
+  const [accessUser, setAccessUser] = useState<User | null>(null);
+  const [accessModules, setAccessModules] = useState<string[]>([]);
+  const [accessUseCustom, setAccessUseCustom] = useState(false);
+  const [accessLoading, setAccessLoading] = useState(false);
 
   const fetchData = async () => {
     setLoading(true);
@@ -218,6 +254,21 @@ function UsersTab() {
       label: "آخرین ورود",
       render: (r) => formatJalaliDateTime(r.lastLoginAt),
     },
+    {
+      key: "moduleAccess",
+      label: "دسترسی ماژول‌ها",
+      render: (r) => (
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-7 text-xs"
+          onClick={() => openAccessDialog(r)}
+        >
+          <LockKeyhole className="w-3 h-3 ml-1" />
+          تنظیم دسترسی
+        </Button>
+      ),
+    },
   ];
 
   const handleSave = async (formData: Record<string, any>) => {
@@ -251,6 +302,28 @@ function UsersTab() {
     } catch (e: any) {
       notifyError(e.message || "خطا در حذف");
       setDeleteOpen(false);
+    }
+  };
+
+  // Open the module access dialog and load the user's current moduleAccess
+  const openAccessDialog = async (user: User) => {
+    setAccessUser(user);
+    setAccessModules([]);
+    setAccessUseCustom(false);
+    setAccessOpen(true);
+    try {
+      const res = await fetch(`/api/user/${user.id}/module-access`);
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.modules)) {
+          setAccessModules(data.modules);
+          setAccessUseCustom(true);
+        } else {
+          setAccessUseCustom(false);
+        }
+      }
+    } catch {
+      // ignore
     }
   };
 
@@ -343,7 +416,168 @@ function UsersTab() {
         message={`آیا از حذف کاربر «${deleting?.username}» مطمئن هستید؟`}
         onConfirm={handleDelete}
       />
+
+      {/* Module Access Dialog */}
+      <ModuleAccessDialog
+        open={accessOpen}
+        onOpenChange={setAccessOpen}
+        user={accessUser}
+        modules={accessModules}
+        setModules={setAccessModules}
+        useCustom={accessUseCustom}
+        setUseCustom={setAccessUseCustom}
+        loading={accessLoading}
+        onSave={async () => {
+          if (!accessUser) return;
+          setAccessLoading(true);
+          try {
+            const body = accessUseCustom ? { modules: accessModules } : { modules: null };
+            const res = await fetch(`/api/user/${accessUser.id}/module-access`, {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(body),
+            });
+            if (!res.ok) {
+              const e = await res.json();
+              throw new Error(e.error || "خطا در ذخیره‌سازی");
+            }
+            notifySuccess("دسترسی ماژول‌ها به‌روزرسانی شد");
+            setAccessOpen(false);
+          } catch (e: any) {
+            notifyError(e.message || "خطا در ذخیره‌سازی");
+          } finally {
+            setAccessLoading(false);
+          }
+        }}
+      />
     </>
+  );
+}
+
+// ============================================================
+// Module Access Dialog — opens the per-user module access editor
+// ============================================================
+function ModuleAccessDialog({
+  open,
+  onOpenChange,
+  user,
+  modules,
+  setModules,
+  useCustom,
+  setUseCustom,
+  loading,
+  onSave,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  user: User | null;
+  modules: string[];
+  setModules: (v: string[]) => void;
+  useCustom: boolean;
+  setUseCustom: (v: boolean) => void;
+  loading: boolean;
+  onSave: () => void;
+}) {
+  const toggleModule = (path: string) => {
+    if (modules.includes(path)) {
+      setModules(modules.filter((m) => m !== path));
+    } else {
+      setModules([...modules, path]);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>دسترسی به ماژول‌ها — {user?.username}</DialogTitle>
+          <DialogDescription>
+            دسترسی کاربر به بخش‌های مختلف سامانه را تنظیم کنید.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4">
+          <label className="flex items-center gap-2 p-3 rounded-md border bg-muted/30 cursor-pointer">
+            <Checkbox
+              checked={useCustom}
+              onCheckedChange={(v) => setUseCustom(v === true)}
+            />
+            <div className="flex-1">
+              <p className="text-sm font-medium">استفاده از دسترسی سفارشی</p>
+              <p className="text-xs text-muted-foreground">
+                اگر فعال باشد، فقط ماژول‌های انتخاب‌شده نمایش داده می‌شوند. در غیر این صورت، از دسترسی پیش‌فرض نقش استفاده می‌شود.
+              </p>
+            </div>
+          </label>
+
+          {useCustom ? (
+            <div className="space-y-2">
+              <p className="text-sm font-medium">ماژول‌های قابل دسترس:</p>
+              <ScrollArea className="h-[300px] rounded-md border p-3">
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {ALL_MODULES.map((m) => {
+                    const checked = modules.includes(m.path);
+                    return (
+                      <label
+                        key={m.path}
+                        className="flex items-center gap-2 p-2 rounded hover:bg-muted/50 cursor-pointer text-sm border"
+                      >
+                        <Checkbox
+                          checked={checked}
+                          onCheckedChange={() => toggleModule(m.path)}
+                        />
+                        <span className="flex-1">{m.label}</span>
+                        <span className="text-[10px] text-muted-foreground font-mono">{m.path}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </ScrollArea>
+              <div className="flex items-center justify-between text-xs text-muted-foreground">
+                <span>{modules.length.toLocaleString("fa-IR")} ماژول انتخاب شده</span>
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => setModules(ALL_MODULES.map((m) => m.path))}
+                  >
+                    انتخاب همه
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => setModules([])}
+                  >
+                    پاک کردن
+                  </Button>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="p-3 rounded-md bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900 text-xs text-amber-800 dark:text-amber-200">
+              این کاربر از دسترسی پیش‌فرض نقش خود استفاده می‌کند. برای تنظیم دسترسی سفارشی، گزینه بالا را فعال کنید.
+            </div>
+          )}
+        </div>
+
+        <DialogFooter>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => onOpenChange(false)}
+            disabled={loading}
+          >
+            انصراف
+          </Button>
+          <Button type="button" onClick={onSave} disabled={loading}>
+            {loading && <Loader2 className="w-4 h-4 ml-1 animate-spin" />}
+            ذخیره
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

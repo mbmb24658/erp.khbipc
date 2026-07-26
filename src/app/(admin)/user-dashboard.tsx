@@ -39,6 +39,7 @@ export interface UserDashboardActivity {
   progressPct: number;
   priority: number;
   updatedAt: string | Date;
+  type?: "pms" | "activity";
 }
 
 interface UserDashboardProps {
@@ -211,9 +212,11 @@ function ActivityCard({
 }) {
   const us = urgencyMap[activity.urgency] || { label: activity.urgency, variant: "secondary" as const };
   const ss = statusMap[activity.status] || { label: activity.status, variant: "secondary" as const };
+  const isPms = activity.type === "pms";
+  const href = isPms ? `/wbs/${activity.id}` : `/activities/${activity.id}`;
   return (
     <Link
-      href={`/activities/${activity.id}`}
+      href={href}
       className="block rounded-lg border p-3 hover:shadow-md hover:border-primary/40 transition-all relative"
     >
       {hasUnreadNotif && (
@@ -227,6 +230,13 @@ function ActivityCard({
         <div className="flex items-center gap-2 min-w-0">
           <Badge variant="outline" className="font-mono text-xs shrink-0">{activity.code}</Badge>
           <Badge variant={us.variant} className="text-xs shrink-0">{us.label}</Badge>
+          <Badge
+            variant={isPms ? "default" : "secondary"}
+            className="text-[10px] shrink-0"
+            title={isPms ? "فعالیت PMS" : "فعالیت جاری"}
+          >
+            {isPms ? "PMS" : "جاری"}
+          </Badge>
         </div>
         <Badge variant={ss.variant} className="text-xs shrink-0">{ss.label}</Badge>
       </div>
@@ -268,9 +278,11 @@ function ActivityRow({
 }) {
   const us = urgencyMap[activity.urgency] || { label: activity.urgency, variant: "secondary" as const };
   const ss = statusMap[activity.status] || { label: activity.status, variant: "secondary" as const };
+  const isPms = activity.type === "pms";
+  const href = isPms ? `/wbs/${activity.id}` : `/activities/${activity.id}`;
   return (
     <Link
-      href={`/activities/${activity.id}`}
+      href={href}
       className="flex items-center gap-3 p-3 rounded-lg border hover:bg-muted/50 transition-colors relative"
     >
       {hasUnreadNotif && (
@@ -287,6 +299,13 @@ function ActivityRow({
         <div className="flex items-center gap-2 mb-0.5">
           <Badge variant="outline" className="font-mono text-[10px] shrink-0">{activity.code}</Badge>
           <span className="text-sm font-medium truncate">{activity.title}</span>
+          <Badge
+            variant={isPms ? "default" : "secondary"}
+            className="text-[10px] shrink-0"
+            title={isPms ? "فعالیت PMS" : "فعالیت جاری"}
+          >
+            {isPms ? "PMS" : "جاری"}
+          </Badge>
         </div>
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <Calendar className="w-3 h-3" />

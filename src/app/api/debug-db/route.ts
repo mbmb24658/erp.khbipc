@@ -1,26 +1,17 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import path from "path";
-import fs from "fs";
 
 export const dynamic = "force-dynamic";
 
-// Debug endpoint to inspect database connection & contents.
-// Helpful when login fails after migration.
-// NOT for production - returns internal state.
+// Debug endpoint — works with both PostgreSQL and SQLite
 export async function GET() {
-  const cwd = process.cwd();
   const dbUrl = process.env.DATABASE_URL || "(not set)";
-  const resolvedDbPath = dbUrl.startsWith("file:")
-    ? path.resolve(cwd, dbUrl.slice("file:".length).replace(/^\.\//, ""))
-    : dbUrl;
-  const dbExists = fs.existsSync(resolvedDbPath);
-  const dbSize = dbExists ? fs.statSync(resolvedDbPath).size : 0;
 
   let userCount = 0;
   let wbsCount = 0;
   let adminUser: any = null;
   let dbError: string | null = null;
+  let columnsInfo: any = null;
 
   try {
     userCount = await db.user.count();
@@ -41,15 +32,29 @@ export async function GET() {
     dbError = e.message;
   }
 
+  // Check if new columns exist (PostgreSQL)
+  try {
+    const columns = await db.$queryRawUnsafe(
+      "SELECT column_name FROM information_schema.columns WHERE table_name = 'User' ORDER BY column_name"
+    );
+    columnsInfo = Array.isArray(columns) ? columns.map((c: any) => c.column_name) : [];
+  } catch {
+    // SQLite fallback
+    try {
+      const columns = await db.$queryRawUnsafe(
+        "SELECT name FROM pragma_table_info('User')"
+      );
+      columnsInfo = Array.isArray(columns) ? columns.map((c: any) => c.name) : [];
+    } catch {}
+  }
+
   return NextResponse.json({
     timestamp: new Date().toISOString(),
     environment: {
       NODE_ENV: process.env.NODE_ENV || "(unset)",
-      cwd,
-      DATABASE_URL: dbUrl,
-      resolvedDbPath,
-      dbExists,
-      dbSizeBytes: dbSize,
+      DATABASE_URL_prefix: dbUrl.substring(0, 30),
+      NEXTAUTH_URL: process.env.NEXTAUTH_URL || "(unset)",
+      NEXTAUTH_SECRET_set: !!process.env.NEXTAUTH_SECRET,
     },
     database: {
       userCount,
@@ -66,11 +71,8 @@ export async function GET() {
             role: adminUser.role?.name,
           }
         : null,
+      userTableColumns: columnsInfo,
       dbError,
-    },
-    nextAuth: {
-      NEXTAUTH_URL: process.env.NEXTAUTH_URL || "(unset)",
-      NEXTAUTH_SECRET_set: !!process.env.NEXTAUTH_SECRET,
     },
   }, { status: 200 });
 }

@@ -442,15 +442,18 @@ async function UserDashboard({ userId }: { userId: string }) {
 
   // Serialize dates for the client component — merge Activity records
   // (marked "activity") with WBS-derived activities (marked "pms").
+  // FILTER OUT completed activities (progressPct >= 100 or status = completed)
   const serialized = [
-    ...assignedActivities.map((a) => ({
-      ...a,
-      startDate: a.startDate ? a.startDate.toISOString() : null,
-      endDate: a.endDate ? a.endDate.toISOString() : null,
-      updatedAt: a.updatedAt.toISOString(),
-      type: "activity" as const,
-    })),
-    ...userWbsActivities,
+    ...assignedActivities
+      .filter((a) => a.status !== "completed" && (a.progressPct || 0) < 100)
+      .map((a) => ({
+        ...a,
+        startDate: a.startDate ? a.startDate.toISOString() : null,
+        endDate: a.endDate ? a.endDate.toISOString() : null,
+        updatedAt: a.updatedAt.toISOString(),
+        type: "activity" as const,
+      })),
+    ...userWbsActivities.filter((w) => w.status !== "completed" && (w.progressPct || 0) < 100),
   ];
 
   return (

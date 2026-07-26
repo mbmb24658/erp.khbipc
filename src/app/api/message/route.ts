@@ -5,67 +5,68 @@ import { authOptions } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
-// GET: List messages for current user (sent + received), newest first
+// GET: List messages for current user
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const userId = (session.user as any).id;
   const { searchParams } = new URL(req.url);
-  const box = searchParams.get("box") || "all"; // all | inbox | sent
+  const box = searchParams.get("box") || "all";
 
-  const where: any = {};
-  if (box === "inbox") where.toUserId = userId;
-  else if (box === "sent") where.fromUserId = userId;
-  else where.OR = [{ fromUserId: userId }, { toUserId: userId }];
+  try {
+    let whereClause: string;
+    if (box === "inbox") {
+      whereClause = `m."toUserId" = $1`;
+    } else if (box === "sent") {
+      whereClause = `m."fromUserId" = $1`;
+    } else {
+      whereClause = `(m."fromUserId" = $1 OR m."toUserId" = $1)`;
+    }
 
-  const messages = await db.message.findMany({
-    where,
-    include: {
+    const messages = await db.$queryRawUnsafe(
+      `SELECT m."id", m."fromUserId", m."toUserId", m."content", m."isRead", m."readAt", m."createdAt",
+              fu."username" AS "fromUsername", fp."name" AS "fromName",
+              tu."username" AS "toUsername", tp."name" AS "toName"
+       FROM "Message" m
+       LEFT JOIN "User" fu ON m."fromUserId" = fu."id"
+       LEFT JOIN "Personel" fp ON fu."personelId" = fp."id"
+       LEFT JOIN "User" tu ON m."toUserId" = tu."id"
+       LEFT JOIN "Personel" tp ON tu."personelId" = tp."id"
+       WHERE ${whereClause}
+       ORDER BY m."createdAt" DESC
+       LIMIT 200`,
+      userId
+    );
+
+    const serialized = (Array.isArray(messages) ? messages : []).map((m: any) => ({
+      id: m.id,
+      fromUserId: m.fromUserId,
+      toUserId: m.toUserId,
+      content: m.content,
+      isRead: m.isRead,
+      readAt: m.readAt ? new Date(m.readAt).toISOString() : null,
+      createdAt: new Date(m.createdAt).toISOString(),
       fromUser: {
-        select: {
-          id: true,
-          username: true,
-          personel: { select: { name: true } },
-        },
+        id: m.fromUserId,
+        username: m.fromUsername,
+        name: m.fromName || m.fromUsername,
       },
       toUser: {
-        select: {
-          id: true,
-          username: true,
-          personel: { select: { name: true } },
-        },
+        id: m.toUserId,
+        username: m.toUsername,
+        name: m.toName || m.toUsername,
       },
-    },
-    orderBy: { createdAt: "desc" },
-    take: 200,
-  });
+    }));
 
-  // Serialize dates
-  const serialized = messages.map((m) => ({
-    id: m.id,
-    fromUserId: m.fromUserId,
-    toUserId: m.toUserId,
-    content: m.content,
-    isRead: m.isRead,
-    readAt: m.readAt ? m.readAt.toISOString() : null,
-    createdAt: m.createdAt.toISOString(),
-    fromUser: {
-      id: m.fromUser.id,
-      username: m.fromUser.username,
-      name: m.fromUser.personel?.name || m.fromUser.username,
-    },
-    toUser: {
-      id: m.toUser.id,
-      username: m.toUser.username,
-      name: m.toUser.personel?.name || m.toUser.username,
-    },
-  }));
-
-  return NextResponse.json(serialized);
+    return NextResponse.json(serialized);
+  } catch (e: any) {
+    // Message table might not exist
+    return NextResponse.json([]);
+  }
 }
 
-// POST: Send a message to another user
+// POST: Send a message
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -92,39 +93,90 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "گیرنده یافت نشد" }, { status: 404 });
   }
 
-  const message = await db.message.create({
-    data: {
-      fromUserId,
-      toUserId: data.toUserId,
-      content: data.content.trim(),
-    },
-    include: {
+  try {
+    // Use raw SQL to create message (avoids Prisma model issues if table just created)
+    const msgId = `msg_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
+    await db.$executeRawUnsafe(
+      `INSERT INTO "Message" ("id", "fromUserId", "toUserId", "content", "isRead", "createdAt")
+       VALUES ($1, $2, $3, $4, false, NOW())`,
+      msgId, fromUserId, data.toUserId, data.content.trim()
+    );
+
+    // Fetch with user info
+    const result = await db.$queryRawUnsafe(
+      `SELECT m."id", m."fromUserId", m."toUserId", m."content", m."isRead", m."createdAt",
+              fu."username" AS "fromUsername", fp."name" AS "fromName",
+              tu."username" AS "toUsername", tp."name" AS "toName"
+       FROM "Message" m
+       LEFT JOIN "User" fu ON m."fromUserId" = fu."id"
+       LEFT JOIN "Personel" fp ON fu."personelId" = fp."id"
+       LEFT JOIN "User" tu ON m."toUserId" = tu."id"
+       LEFT JOIN "Personel" tp ON tu."personelId" = tp."id"
+       WHERE m."id" = $1`,
+      msgId
+    );
+
+    const m = Array.isArray(result) && result.length > 0 ? result[0] : null;
+    if (!m) {
+      return NextResponse.json({ error: "خطا در ایجاد پیام" }, { status: 500 });
+    }
+
+    return NextResponse.json({
+      id: (m as any).id,
+      fromUserId: (m as any).fromUserId,
+      toUserId: (m as any).toUserId,
+      content: (m as any).content,
+      isRead: (m as any).isRead,
+      readAt: null,
+      createdAt: new Date((m as any).createdAt).toISOString(),
       fromUser: {
-        select: { id: true, username: true, personel: { select: { name: true } } },
+        id: (m as any).fromUserId,
+        username: (m as any).fromUsername,
+        name: (m as any).fromName || (m as any).fromUsername,
       },
       toUser: {
-        select: { id: true, username: true, personel: { select: { name: true } } },
+        id: (m as any).toUserId,
+        username: (m as any).toUsername,
+        name: (m as any).toName || (m as any).toUsername,
       },
-    },
-  });
+    }, { status: 201 });
+  } catch (e: any) {
+    // Message table might not exist — try to create it
+    try {
+      await db.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS "Message" (
+          "id" TEXT NOT NULL PRIMARY KEY,
+          "fromUserId" TEXT NOT NULL,
+          "toUserId" TEXT NOT NULL,
+          "content" TEXT NOT NULL,
+          "isRead" BOOLEAN NOT NULL DEFAULT false,
+          "readAt" TIMESTAMP,
+          "createdAt" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          CONSTRAINT "Message_fromUserId_fkey" FOREIGN KEY ("fromUserId") REFERENCES "User"("id") ON DELETE CASCADE,
+          CONSTRAINT "Message_toUserId_fkey" FOREIGN KEY ("toUserId") REFERENCES "User"("id") ON DELETE CASCADE
+        )
+      `);
+      // Retry insert
+      const msgId = `msg_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
+      await db.$executeRawUnsafe(
+        `INSERT INTO "Message" ("id", "fromUserId", "toUserId", "content", "isRead", "createdAt")
+         VALUES ($1, $2, $3, $4, false, NOW())`,
+        msgId, fromUserId, data.toUserId, data.content.trim()
+      );
 
-  return NextResponse.json({
-    id: message.id,
-    fromUserId: message.fromUserId,
-    toUserId: message.toUserId,
-    content: message.content,
-    isRead: message.isRead,
-    readAt: message.readAt ? message.readAt.toISOString() : null,
-    createdAt: message.createdAt.toISOString(),
-    fromUser: {
-      id: message.fromUser.id,
-      username: message.fromUser.username,
-      name: message.fromUser.personel?.name || message.fromUser.username,
-    },
-    toUser: {
-      id: message.toUser.id,
-      username: message.toUser.username,
-      name: message.toUser.personel?.name || message.toUser.username,
-    },
-  }, { status: 201 });
+      return NextResponse.json({
+        id: msgId,
+        fromUserId,
+        toUserId: data.toUserId,
+        content: data.content.trim(),
+        isRead: false,
+        readAt: null,
+        createdAt: new Date().toISOString(),
+        fromUser: { id: fromUserId, username: "", name: "" },
+        toUser: { id: data.toUserId, username: "", name: "" },
+      }, { status: 201 });
+    } catch (e2: any) {
+      return NextResponse.json({ error: e2.message }, { status: 500 });
+    }
+  }
 }

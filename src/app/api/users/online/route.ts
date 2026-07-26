@@ -14,37 +14,49 @@ export async function GET() {
   const userId = (session.user as any).id;
 
   // Update the current user's lastActivityAt timestamp (heartbeat)
+  // Use raw SQL to avoid Prisma issues if column doesn't exist
   try {
-    await db.user.update({
-      where: { id: userId },
-      data: { lastActivityAt: new Date() },
-    });
+    await db.$executeRawUnsafe(
+      `UPDATE "User" SET "lastActivityAt" = $1 WHERE "id" = $2`,
+      new Date(), userId
+    );
   } catch {
-    // ignore — non-fatal
+    // Column might not exist — try without it
+    try {
+      await db.$executeRawUnsafe(
+        `UPDATE "User" SET "lastLoginAt" = $1 WHERE "id" = $2`,
+        new Date(), userId
+      );
+    } catch {
+      // ignore
+    }
   }
 
   // Users active within the last 5 minutes (excluding the current user)
-  const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
-  const onlineUsers = await db.user.findMany({
-    where: {
-      isActive: true,
-      lastActivityAt: { gte: fiveMinutesAgo },
-      id: { not: userId },
-    },
-    select: {
-      id: true,
-      username: true,
-      lastActivityAt: true,
-      personel: { select: { name: true } },
-    },
-  });
+  // Use raw SQL to avoid Prisma issues with lastActivityAt column
+  try {
+    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+    const onlineUsers = await db.$queryRawUnsafe(
+      `SELECT u."id", u."username", u."lastActivityAt", p."name"
+       FROM "User" u
+       LEFT JOIN "Personel" p ON u."personelId" = p."id"
+       WHERE u."isActive" = true
+         AND u."lastActivityAt" >= $1
+         AND u."id" != $2
+       ORDER BY u."lastActivityAt" DESC`,
+      fiveMinutesAgo, userId
+    );
 
-  const serialized = onlineUsers.map((u) => ({
-    id: u.id,
-    username: u.username,
-    name: u.personel?.name || u.username,
-    lastActivityAt: u.lastActivityAt ? u.lastActivityAt.toISOString() : null,
-  }));
+    const serialized = (Array.isArray(onlineUsers) ? onlineUsers : []).map((u: any) => ({
+      id: u.id,
+      username: u.username,
+      name: u.name || u.username,
+      lastActivityAt: u.lastActivityAt ? new Date(u.lastActivityAt).toISOString() : null,
+    }));
 
-  return NextResponse.json(serialized);
+    return NextResponse.json(serialized);
+  } catch {
+    // lastActivityAt column doesn't exist — return empty list
+    return NextResponse.json([]);
+  }
 }

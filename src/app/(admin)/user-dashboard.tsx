@@ -138,6 +138,7 @@ type UrgencyFilter = "all" | "low" | "normal" | "high" | "urgent";
 type SortKey = "priority" | "urgency" | "dueDate" | "updatedAt" | "title";
 type TimeFilter = "today" | "week" | "all";
 type HrTypeFilter = "all" | "mine" | "needed";
+type ActivityTypeFilter = "all" | "pms" | "activity";
 
 const sortOptions: { value: SortKey; label: string }[] = [
   { value: "priority", label: "اولویت (نزولی)" },
@@ -233,6 +234,48 @@ function applyTimeFilter(
     const end = e || s!;
     return start < weekEnd && end >= weekStart;
   });
+}
+
+// "عقب‌افتاده" (delayed) filter — shows activities that are either past their
+// end date without being completed OR are behind their expected progress
+// based on the time elapsed since the start date.
+function isActivityDelayed(a: UserDashboardActivity, now: Date): boolean {
+  if (a.progressPct >= 100) return false;
+  const s = toDate(a.startDate);
+  const e = toDate(a.endDate);
+  // Past end date and not completed
+  if (e && e.getTime() < now.getTime() && a.status !== "completed" && a.status !== "cancelled") {
+    return true;
+  }
+  // Behind schedule based on time elapsed
+  if (s && e) {
+    const total = e.getTime() - s.getTime();
+    const elapsed = now.getTime() - s.getTime();
+    if (total > 0 && elapsed > 0) {
+      const expectedProgress = Math.min(100, Math.max(0, (elapsed / total) * 100));
+      if (a.progressPct < expectedProgress) return true;
+    }
+  }
+  return false;
+}
+
+function applyDelayedFilter(
+  list: UserDashboardActivity[],
+  enabled: boolean,
+  now: Date
+): UserDashboardActivity[] {
+  if (!enabled) return list;
+  return list.filter((a) => isActivityDelayed(a, now));
+}
+
+function applyTypeFilter(
+  list: UserDashboardActivity[],
+  typeFilter: ActivityTypeFilter
+): UserDashboardActivity[] {
+  if (typeFilter === "all") return list;
+  return list.filter((a) =>
+    typeFilter === "pms" ? a.type === "pms" : a.type === "activity"
+  );
 }
 
 // ============================================================
@@ -373,6 +416,8 @@ function StrategicTopicSection({
   weekStart,
   weekEnd,
   defaultExpanded,
+  hrType,
+  now,
 }: {
   topic: string;
   topicLabel: string;
@@ -383,17 +428,36 @@ function StrategicTopicSection({
   weekStart: Date;
   weekEnd: Date;
   defaultExpanded?: boolean;
+  hrType: HrTypeFilter;
+  now: Date;
 }) {
   const [expanded, setExpanded] = useState(defaultExpanded ?? items.length > 0);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [urgencyFilter, setUrgencyFilter] = useState<UrgencyFilter>("all");
   const [sortBy, setSortBy] = useState<SortKey>("priority");
   const [timeFilter, setTimeFilter] = useState<TimeFilter>("all");
+  const [delayedFilter, setDelayedFilter] = useState<boolean>(false);
+  const [typeFilter, setTypeFilter] = useState<ActivityTypeFilter>("all");
 
-  // Apply time filter, then status/urgency, then sort
+  // Apply HR category filter first (same logic as top-level)
+  const hrFilteredItems = useMemo(() => {
+    if (hrType === "all") return items;
+    if (hrType === "mine") return items.filter((a) => a.needsMe);
+    return items.filter((a) => !a.needsMe);
+  }, [items, hrType]);
+
+  // Apply delayed filter, then type filter, then time filter, then status/urgency, then sort
+  const delayedFiltered = useMemo(
+    () => applyDelayedFilter(hrFilteredItems, delayedFilter, now),
+    [hrFilteredItems, delayedFilter, now]
+  );
+  const typeFiltered = useMemo(
+    () => applyTypeFilter(delayedFiltered, typeFilter),
+    [delayedFiltered, typeFilter]
+  );
   const timeFiltered = useMemo(
-    () => applyTimeFilter(items, timeFilter, startOfToday, endOfToday, weekStart, weekEnd),
-    [items, timeFilter, startOfToday, endOfToday, weekStart, weekEnd]
+    () => applyTimeFilter(typeFiltered, timeFilter, startOfToday, endOfToday, weekStart, weekEnd),
+    [typeFiltered, timeFilter, startOfToday, endOfToday, weekStart, weekEnd]
   );
   const processed = useMemo(
     () => applyFilterSort(timeFiltered, statusFilter, urgencyFilter, sortBy),
@@ -415,7 +479,7 @@ function StrategicTopicSection({
             )}
             <CardTitle className="text-base">{topicLabel}</CardTitle>
             <Badge variant="secondary" className="font-num text-xs">
-              {items.length.toLocaleString("fa-IR")} فعالیت
+              {hrFilteredItems.length.toLocaleString("fa-IR")} فعالیت
             </Badge>
           </div>
         </button>
@@ -423,17 +487,40 @@ function StrategicTopicSection({
       {expanded && (
         <CardContent className="space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <ToggleGroup
-              type="single"
-              value={timeFilter}
-              onValueChange={(v) => { if (v) setTimeFilter(v as TimeFilter); }}
-              variant="outline"
-              className="gap-1"
-            >
-              <ToggleGroupItem value="today" className="h-7 text-xs px-3">امروز</ToggleGroupItem>
-              <ToggleGroupItem value="week" className="h-7 text-xs px-3">این هفته</ToggleGroupItem>
-              <ToggleGroupItem value="all" className="h-7 text-xs px-3">همه</ToggleGroupItem>
-            </ToggleGroup>
+            <div className="flex flex-wrap items-center gap-2">
+              <ToggleGroup
+                type="single"
+                value={timeFilter}
+                onValueChange={(v) => { if (v) setTimeFilter(v as TimeFilter); }}
+                variant="outline"
+                className="gap-1"
+              >
+                <ToggleGroupItem value="today" className="h-7 text-xs px-3">امروز</ToggleGroupItem>
+                <ToggleGroupItem value="week" className="h-7 text-xs px-3">این هفته</ToggleGroupItem>
+                <ToggleGroupItem value="all" className="h-7 text-xs px-3">همه</ToggleGroupItem>
+              </ToggleGroup>
+              <Button
+                type="button"
+                variant={delayedFilter ? "default" : "outline"}
+                size="sm"
+                onClick={() => setDelayedFilter(!delayedFilter)}
+                className="h-7 text-xs px-3"
+                aria-pressed={delayedFilter}
+              >
+                <AlertTriangle className="w-3.5 h-3.5 ml-1" />
+                عقب‌افتاده
+              </Button>
+              <Select value={typeFilter} onValueChange={(v) => setTypeFilter(v as ActivityTypeFilter)}>
+                <SelectTrigger className="h-7 w-[120px] text-xs">
+                  <SelectValue placeholder="نوع فعالیت" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">همه انواع</SelectItem>
+                  <SelectItem value="pms">PMS</SelectItem>
+                  <SelectItem value="activity">جاری</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
             <SectionControls
               statusFilter={statusFilter}
               setStatusFilter={setStatusFilter}
@@ -445,7 +532,7 @@ function StrategicTopicSection({
           </div>
           {processed.length === 0 ? (
             <p className="text-sm text-muted-foreground text-center py-6">
-              {items.length === 0
+              {hrFilteredItems.length === 0
                 ? "موردی برای نمایش وجود ندارد"
                 : "با فیلتر فعلی موردی یافت نشد"}
             </p>
@@ -498,9 +585,9 @@ export function UserDashboard({
   const [hrType, setHrType] = useState<HrTypeFilter>("all");
   const hrFiltered = useMemo(() => {
     if (hrType === "all") return activities;
-    if (hrType === "mine") return activities;
-    // "needed me" — only activities flagged needsMe
-    return activities.filter((a) => a.needsMe);
+    if (hrType === "mine") return activities.filter((a) => a.needsMe);
+    // "outside chart" — activities where user's org position is NOT in hrPlan
+    return activities.filter((a) => !a.needsMe);
   }, [activities, hrType]);
 
   // ---- Stats ----
@@ -581,8 +668,8 @@ export function UserDashboard({
           onValueChange={(v) => { if (v) setHrType(v as HrTypeFilter); }}
           variant="outline"
         >
-          <ToggleGroupItem value="mine" className="text-xs">فعالیت‌های من</ToggleGroupItem>
-          <ToggleGroupItem value="needed" className="text-xs">فعالیت‌های نیاز به من</ToggleGroupItem>
+          <ToggleGroupItem value="mine" className="text-xs">فعالیت‌های اصلی</ToggleGroupItem>
+          <ToggleGroupItem value="needed" className="text-xs">فعالیت‌های خارج از چارت</ToggleGroupItem>
           <ToggleGroupItem value="all" className="text-xs">همه فعالیت‌ها</ToggleGroupItem>
         </ToggleGroup>
       </div>
@@ -733,6 +820,8 @@ export function UserDashboard({
             weekStart={weekStart}
             weekEnd={weekEnd}
             defaultExpanded={groupedByTopic[t].length > 0}
+            hrType={hrType}
+            now={now}
           />
         ))}
         {groupedByTopic["other"].length > 0 && (
@@ -746,6 +835,8 @@ export function UserDashboard({
             weekStart={weekStart}
             weekEnd={weekEnd}
             defaultExpanded
+            hrType={hrType}
+            now={now}
           />
         )}
       </div>

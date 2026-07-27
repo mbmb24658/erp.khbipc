@@ -491,7 +491,7 @@ export default function ActivitiesPage() {
     <div>
       <PageHeader
         title="مدیریت فعالیت‌های جاری"
-        description="فعالیت‌هایی که به اشخاص حقیقی و سمت‌های سازمانی اساین شده‌اند"
+        description="فعالیت‌هایی که به اشخاص حقیقی و سمت‌های سازمانی اختصاص یافته اند"
       >
         {isAdmin && (
           <Button onClick={openAdd}>

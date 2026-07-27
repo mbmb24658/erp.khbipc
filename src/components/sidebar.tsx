@@ -28,6 +28,7 @@ import {
   Moon,
   Activity,
   Briefcase,
+  FileBarChart,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -42,6 +43,7 @@ const navItems = [
   { href: "/executors", label: "مجریان", icon: Briefcase, roles: ["admin", "moderator", "user"] },
   { href: "/activities", label: "فعالیت‌های جاری", icon: Activity, roles: ["admin", "moderator", "user"] },
   { href: "/issues", label: "نظام مسائل", icon: AlertCircle, roles: ["admin", "moderator", "user"] },
+  { href: "/reports", label: "گزارشات", icon: FileBarChart, roles: ["admin", "moderator", "user"] },
   { href: "/kpi", label: "ارزیابی عملکرد (KPI)", icon: Target, roles: ["admin", "moderator", "user"] },
   { href: "/personnel-evaluation", label: "ارزیابی پرسنل", icon: Target, roles: ["admin", "moderator", "user"] },
   { href: "/risks", label: "مدیریت ریسک", icon: AlertTriangle, roles: ["admin", "moderator", "user"] },

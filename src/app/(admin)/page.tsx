@@ -558,8 +558,12 @@ async function UserDashboard({ userId }: { userId: string }) {
   const myActivityIds = assignedActivities.map((a) => a.id);
   const myWbsIds = userWbsActivities.map((w) => w.id);
 
-  const [wbsStatusUpdates, activityStatusUpdates] = await Promise.all([
-    db.wBSStatusUpdate.findMany({
+  // Use try-catch in case WBSStatusUpdate model doesn't exist in DB yet
+  let wbsStatusUpdates: any[] = [];
+  let activityStatusUpdates: any[] = [];
+
+  try {
+    wbsStatusUpdates = await (db as any).wBSStatusUpdate?.findMany({
       where: { wbsId: { in: myWbsIds } },
       include: {
         personel: { select: { name: true } },
@@ -567,8 +571,13 @@ async function UserDashboard({ userId }: { userId: string }) {
       },
       orderBy: { createdAt: "desc" },
       take: 20,
-    }),
-    db.activityStatusUpdate.findMany({
+    }) ?? [];
+  } catch {
+    // Model or table doesn't exist yet — skip
+  }
+
+  try {
+    activityStatusUpdates = await db.activityStatusUpdate.findMany({
       where: { activityId: { in: myActivityIds } },
       include: {
         personel: { select: { name: true } },
@@ -576,8 +585,10 @@ async function UserDashboard({ userId }: { userId: string }) {
       },
       orderBy: { createdAt: "desc" },
       take: 20,
-    }),
-  ]);
+    });
+  } catch {
+    // Skip
+  }
 
   const recentStatusUpdates = [
     ...wbsStatusUpdates.map((su) => ({

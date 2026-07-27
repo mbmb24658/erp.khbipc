@@ -85,7 +85,7 @@ async function AdminDashboard() {
       id: w.id,
       code: w.wbsCode,
       title: w.title,
-      status: w.status,
+      status: (w as any).status || "pending",
       progressPct: Math.round((w.progressActual || 0) * 100),
       updatedAt: w.updatedAt,
       type: "pms" as const,
@@ -438,7 +438,6 @@ async function UserDashboard({ userId }: { userId: string }) {
       status: true,
       progressPct: true,
       priority: true,
-      strategicTopic: true,
       updatedAt: true,
     },
     orderBy: [{ priority: "desc" }, { updatedAt: "desc" }],
@@ -464,8 +463,6 @@ async function UserDashboard({ userId }: { userId: string }) {
       priority: true,
       hrActual: true,
       hrPlan: true,
-      strategicTopic: true,
-      status: true,
       updatedAt: true,
     },
   });
@@ -515,11 +512,11 @@ async function UserDashboard({ userId }: { userId: string }) {
         durationDays: null as number | null,
         urgency: w.urgency || "normal",
         priority: w.priority ?? 3,
-        status: w.status || derivedStatus,
+        status: (w as any).status || derivedStatus,
         progressPct: (w.progressActual || 0) * 100,
         updatedAt: w.updatedAt.toISOString(),
         type: "pms" as const,
-        strategicTopic: w.strategicTopic || null,
+        strategicTopic: (w as any).strategicTopic || null,
         needsMe,
       };
     });
@@ -550,10 +547,10 @@ async function UserDashboard({ userId }: { userId: string }) {
         endDate: a.endDate ? a.endDate.toISOString() : null,
         updatedAt: a.updatedAt.toISOString(),
         type: "activity" as const,
-        strategicTopic: a.strategicTopic || null,
+        strategicTopic: (a as any).strategicTopic || null,
         needsMe: false,
       })),
-    ...userWbsActivities.filter((w) => w.status !== "completed" && (w.progressPct || 0) < 100),
+    ...userWbsActivities.filter((w) => (w as any).status !== "completed" && (w.progressPct || 0) < 100),
   ];
 
   // ---- Fetch recent status updates (WBS + Activity) — last 10 ----

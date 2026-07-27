@@ -149,7 +149,7 @@ export default function ReportsPage() {
   const [error, setError] = useState<string | null>(null);
 
   // Cover image URL — fetched from public/upload/cover.jpg
-  const coverImageUrl = "/upload/cover.jpg";
+  const coverImageUrl = "../upload/cover.jpg";
   const [coverOk, setCoverOk] = useState(true);
 
   // Build a "Jalali range" string for the cover overlay

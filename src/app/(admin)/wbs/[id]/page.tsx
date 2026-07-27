@@ -54,12 +54,21 @@ export default async function WBSDetailPage({
       assets: true,
       kpis: true,
       risks: true,
-      statusUpdates: {
-        include: { personel: true },
-        orderBy: { createdAt: "desc" },
-      },
     },
   });
+
+  // Fetch status updates separately (model might not exist in DB yet)
+  let statusUpdates: any[] = [];
+  try {
+    statusUpdates = await (db as any).wBSStatusUpdate?.findMany({
+      where: { wbsId: id },
+      include: { personel: { select: { name: true } } },
+      orderBy: { createdAt: "desc" },
+      take: 20,
+    }) ?? [];
+  } catch {
+    // Table doesn't exist yet — skip
+  }
 
   if (!wbs) notFound();
 
@@ -352,7 +361,7 @@ export default async function WBSDetailPage({
         )}
 
         {/* Status update section */}
-        <WBSStatusUpdateSection wbsId={wbs.id} currentStatus={wbs.status} currentProgressPct={progressActualPct} statusUpdates={wbs.statusUpdates} />
+        <WBSStatusUpdateSection wbsId={wbs.id} currentStatus={(wbs as any).status || "pending"} currentProgressPct={progressActualPct} statusUpdates={statusUpdates} />
       </div>
     </div>
   );

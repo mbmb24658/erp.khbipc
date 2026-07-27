@@ -73,27 +73,43 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
   const { data: session } = useSession();
   const userRole = (session?.user as any)?.role || "user";
-  const moduleAccess = (session?.user as any)?.moduleAccess as string | null | undefined;
+  const [moduleAccess, setModuleAccess] = useState<string[] | null>(null);
+  const [fetchedAccess, setFetchedAccess] = useState(false);
 
-  // Filter nav items:
-  // - Admin always sees everything
-  // - If moduleAccess is set (non-null array), show only those modules (override role-based defaults)
-  // - If moduleAccess is null/undefined, use role-based filtering
+  // Fetch moduleAccess from API on every mount (not from JWT which may be stale)
+  useEffect(() => {
+    if (userRole === "admin" || !session?.user) {
+      setFetchedAccess(true);
+      return;
+    }
+    const userId = (session.user as any).id;
+    if (!userId) {
+      setFetchedAccess(true);
+      return;
+    }
+    fetch(`/api/user/${userId}/module-access`)
+      .then((res) => res.ok ? res.json() : { modules: null })
+      .then((data) => {
+        setModuleAccess(data.modules);
+        setFetchedAccess(true);
+      })
+      .catch(() => {
+        setModuleAccess(null);
+        setFetchedAccess(true);
+      });
+  }, [session, userRole]);
+
+  // Filter nav items
   const visibleItems = navItems.filter((item) => {
     if (userRole === "admin") return true;
-    if (moduleAccess !== null && moduleAccess !== undefined) {
-      // moduleAccess is a JSON string; parse it
-      try {
-        const allowed: string[] = JSON.parse(moduleAccess);
-        if (!Array.isArray(allowed)) return item.roles.includes(userRole);
-        // Special case: financial-dashboard and financial are linked
-        if (item.href === "/financial-dashboard" && allowed.includes("/financial")) return true;
-        if (item.href === "/financial" && allowed.includes("/financial-dashboard")) return true;
-        return allowed.includes(item.href);
-      } catch {
-        return item.roles.includes(userRole);
-      }
+    if (moduleAccess !== null) {
+      // Custom module access is set
+      // Special case: financial-dashboard and financial are linked
+      if (item.href === "/financial-dashboard" && moduleAccess.includes("/financial")) return true;
+      if (item.href === "/financial" && moduleAccess.includes("/financial-dashboard")) return true;
+      return moduleAccess.includes(item.href);
     }
+    // Fall back to role-based filtering
     return item.roles.includes(userRole);
   });
 

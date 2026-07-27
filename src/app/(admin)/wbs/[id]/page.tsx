@@ -361,7 +361,7 @@ export default async function WBSDetailPage({
         )}
 
         {/* Status update section */}
-        <WBSStatusUpdateSection wbsId={wbs.id} currentStatus={(wbs as any).status || "pending"} currentProgressPct={progressActualPct} statusUpdates={statusUpdates} />
+        <WBSStatusUpdateSection wbsId={wbs.id} currentStatus={wbs.status || "pending"} currentProgressPct={progressActualPct} statusUpdates={statusUpdates} />
       </div>
     </div>
   );

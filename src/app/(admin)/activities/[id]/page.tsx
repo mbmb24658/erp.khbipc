@@ -10,11 +10,10 @@ import {
   Clock,
   CheckCircle2,
   Users,
-  Building,
   Activity as ActivityIcon,
   ClipboardList,
 } from "lucide-react";
-import { ActivityDetailClient, RemoveAssignmentClient } from "./activity-detail-client";
+import { ActivityDetailClient } from "./activity-detail-client";
 import { formatJalali, formatJalaliDateTime } from "@/lib/jalali";
 
 export const dynamic = "force-dynamic";
@@ -40,6 +39,15 @@ export default async function ActivityDetailPage({
   });
 
   if (!activity) notFound();
+
+  // Strategic topic display label
+  const strategicTopicMap: Record<string, string> = {
+    "1.1": "1.1 - حکمرانی دارایی‌محور",
+    "1.2": "1.2 - دارایی‌های داخلی",
+    "1.3": "1.3 - دارایی‌های بیرونی",
+    "1.4": "1.4 - دارایی‌های دانشی",
+    "1.5": "1.5 - پایداری مالی",
+  };
 
   // Parse hrPlan / hrActual JSON arrays and resolve names for display
   const parseIds = (val: string | null | undefined): string[] => {
@@ -103,6 +111,11 @@ export default async function ActivityDetailPage({
                 <Badge variant={us.variant}>{us.label}</Badge>
                 <Badge variant={ss.variant}>{ss.label}</Badge>
                 <Badge variant="secondary">اولویت: {data.priority.toLocaleString("fa-IR")}</Badge>
+                {data.strategicTopic && (
+                  <Badge variant="default" className="text-xs">
+                    {strategicTopicMap[data.strategicTopic] || data.strategicTopic}
+                  </Badge>
+                )}
               </div>
               <h1 className="text-2xl font-bold">{data.title}</h1>
               {data.description && (
@@ -208,62 +221,6 @@ export default async function ActivityDetailPage({
                   <Badge key={p.id} variant="default" className="text-xs">
                     {p.personelId} - {p.name}
                   </Badge>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-
-      <div className="grid gap-4 lg:grid-cols-2 mb-6">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base flex items-center gap-2">
-              <Users className="w-4 h-4" />
-              اشخاص تخصیص‌یافته ({data.personAssignments.length.toLocaleString("fa-IR")})
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {data.personAssignments.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-4">شخصی تخصیص نیافته است</p>
-            ) : (
-              <div className="space-y-2">
-                {data.personAssignments.map((pa: any) => (
-                  <RemoveAssignmentClient
-                    key={pa.id}
-                    id={pa.id}
-                    name={pa.personel.name}
-                    code={pa.personel.personelId}
-                    role={pa.role}
-                    type="person"
-                  />
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base flex items-center gap-2">
-              <Building className="w-4 h-4" />
-              سمت‌های سازمانی ({data.orgAssignments.length.toLocaleString("fa-IR")})
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {data.orgAssignments.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-4">سمتی تخصیص نیافته است</p>
-            ) : (
-              <div className="space-y-2">
-                {data.orgAssignments.map((oa: any) => (
-                  <RemoveAssignmentClient
-                    key={oa.id}
-                    id={oa.id}
-                    name={oa.orgChart.position}
-                    code={oa.orgChart.orgId}
-                    role={oa.role}
-                    type="org"
-                  />
                 ))}
               </div>
             )}

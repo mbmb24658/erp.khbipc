@@ -64,8 +64,18 @@ interface WBS {
   urgency?: string;
   priority?: number;
   description: string | null;
+  strategicTopic?: string | null;
+  status?: string;
   _count?: { children: number; personels: number };
 }
+
+const strategicTopicMap: Record<string, string> = {
+  "1.1": "1.1 - حکمرانی دارایی‌محور",
+  "1.2": "1.2 - دارایی‌های داخلی",
+  "1.3": "1.3 - دارایی‌های بیرونی",
+  "1.4": "1.4 - دارایی‌های دانشی",
+  "1.5": "1.5 - پایداری مالی",
+};
 
 const fields = [
   { key: "wbsCode", label: "کد WBS", required: true, placeholder: "مثال: 1.2.1.1", helpText: "کد یکتای فعالیت" },
@@ -227,6 +237,11 @@ export default function WBSPage() {
               {w.wbsCode}
             </Badge>
             <span className="text-sm font-medium truncate flex-1">{w.title}</span>
+            {w.strategicTopic && w.level >= 2 && (
+              <Badge variant="secondary" className="text-[10px] shrink-0 hidden md:inline">
+                {strategicTopicMap[w.strategicTopic] || w.strategicTopic}
+              </Badge>
+            )}
             {parentWbs && (
               <span className="text-xs text-muted-foreground shrink-0 hidden md:inline">
                 (والد: {parentWbs.wbsCode})
@@ -313,6 +328,18 @@ export default function WBSPage() {
       render: (r) => <Badge variant="outline" className="font-mono">{r.wbsCode}</Badge>,
     },
     { key: "title", label: "عنوان" },
+    {
+      key: "strategicTopic",
+      label: "موضوع استراتژیک",
+      render: (r) =>
+        r.strategicTopic ? (
+          <Badge variant="secondary" className="text-xs">
+            {strategicTopicMap[r.strategicTopic] || r.strategicTopic}
+          </Badge>
+        ) : (
+          <span className="text-xs text-muted-foreground">-</span>
+        ),
+    },
     {
       key: "level",
       label: "سطح",

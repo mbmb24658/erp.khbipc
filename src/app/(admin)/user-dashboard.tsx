@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
+import { Button } from "@/components/ui/button";
 import {
   Select,
   SelectContent,
@@ -13,14 +14,33 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  Target,
-  AlertTriangle,
-  Activity,
+  ToggleGroup,
+  ToggleGroupItem,
+} from "@/components/ui/toggle-group";
+import {
+  PieChart,
+  Pie,
+  Cell,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+} from "recharts";
+import {
+  Activity as ActivityIcon,
   Calendar,
   CheckCircle2,
   Clock,
+  ChevronDown,
+  ChevronLeft,
+  AlertTriangle,
+  Target,
 } from "lucide-react";
-import { formatJalali } from "@/lib/jalali";
+import { formatJalali, formatJalaliDateTime } from "@/lib/jalali";
 
 // ============================================================
 // Types
@@ -40,12 +60,31 @@ export interface UserDashboardActivity {
   priority: number;
   updatedAt: string | Date;
   type?: "pms" | "activity";
+  strategicTopic?: string | null;
+  // For "needed me" filter — only set on PMS activities where the user's
+  // org position is in hrPlan AND user's personelId is in hrActual.
+  needsMe?: boolean;
+}
+
+export interface UserDashboardStatusUpdate {
+  id: string;
+  entityType: "activity" | "wbs";
+  entityId: string;
+  entityCode: string;
+  entityTitle: string;
+  previousStatus: string | null;
+  newStatus: string;
+  progressPct: number | null;
+  notes: string | null;
+  createdAt: string;
+  personelName: string | null;
 }
 
 interface UserDashboardProps {
   activities: UserDashboardActivity[];
   personName: string;
   notifActivityIds: string[];
+  statusUpdates: UserDashboardStatusUpdate[];
 }
 
 // ============================================================
@@ -74,9 +113,31 @@ const urgencyWeight: Record<string, number> = {
   low: 1,
 };
 
+const strategicTopicMap: Record<string, string> = {
+  "1.1": "1.1 - حکمرانی دارایی‌محور",
+  "1.2": "1.2 - دارایی‌های داخلی",
+  "1.3": "1.3 - دارایی‌های بیرونی",
+  "1.4": "1.4 - دارایی‌های دانشی",
+  "1.5": "1.5 - پایداری مالی",
+};
+
+const strategicTopicOrder = ["1.1", "1.2", "1.3", "1.4", "1.5"];
+
+const PIE_COLORS_STATUS: Record<string, string> = {
+  pending: "#f59e0b",
+  in_progress: "#3b82f6",
+  completed: "#10b981",
+  on_hold: "#8b5cf6",
+  cancelled: "#ef4444",
+};
+
+const BAR_COLORS = ["#10b981", "#3b82f6", "#f59e0b", "#8b5cf6", "#ef4444"];
+
 type StatusFilter = "all" | "pending" | "in_progress" | "completed";
 type UrgencyFilter = "all" | "low" | "normal" | "high" | "urgent";
 type SortKey = "priority" | "urgency" | "dueDate" | "updatedAt" | "title";
+type TimeFilter = "today" | "week" | "all";
+type HrTypeFilter = "all" | "mine" | "needed";
 
 const sortOptions: { value: SortKey; label: string }[] = [
   { value: "priority", label: "اولویت (نزولی)" },
@@ -87,8 +148,7 @@ const sortOptions: { value: SortKey; label: string }[] = [
 ];
 
 // ============================================================
-// Date helpers — runs on client. Same logic as the original
-// server-side UserDashboard.
+// Date helpers
 // ============================================================
 
 function toDate(val: string | Date | null): Date | null {
@@ -135,6 +195,44 @@ function applyFilterSort(
   });
 
   return sorted;
+}
+
+// Time-based filter (today / this week / all)
+function applyTimeFilter(
+  list: UserDashboardActivity[],
+  timeFilter: TimeFilter,
+  startOfToday: Date,
+  endOfToday: Date,
+  weekStart: Date,
+  weekEnd: Date
+): UserDashboardActivity[] {
+  if (timeFilter === "all") return list;
+  return list.filter((a) => {
+    const s = toDate(a.startDate);
+    const e = toDate(a.endDate);
+    const active = a.status !== "completed" && a.status !== "cancelled";
+    if (timeFilter === "today") {
+      if (s && e) {
+        if (s <= endOfToday && e >= startOfToday) return true;
+        if (e < startOfToday && active) return true;
+        return false;
+      }
+      if (e) {
+        if (e >= startOfToday && e < endOfToday) return true;
+        if (e < startOfToday && active) return true;
+        return false;
+      }
+      if (s) {
+        return s >= startOfToday && s < endOfToday;
+      }
+      return false;
+    }
+    // week
+    if (!s && !e) return false;
+    const start = s || e!;
+    const end = e || s!;
+    return start < weekEnd && end >= weekStart;
+  });
 }
 
 // ============================================================
@@ -262,173 +360,114 @@ function ActivityCard({
 }
 
 // ============================================================
-// Activity row (compact list layout for top-10)
+// Collapsible section by strategic topic
 // ============================================================
 
-function ActivityRow({
-  activity,
-  rank,
-  hasUnreadNotif,
-  overdue,
-}: {
-  activity: UserDashboardActivity;
-  rank: number;
-  hasUnreadNotif: boolean;
-  overdue: boolean;
-}) {
-  const us = urgencyMap[activity.urgency] || { label: activity.urgency, variant: "secondary" as const };
-  const ss = statusMap[activity.status] || { label: activity.status, variant: "secondary" as const };
-  const isPms = activity.type === "pms";
-  const href = isPms ? `/wbs/${activity.id}` : `/activities/${activity.id}`;
-  return (
-    <Link
-      href={href}
-      className="flex items-center gap-3 p-3 rounded-lg border hover:bg-muted/50 transition-colors relative"
-    >
-      {hasUnreadNotif && (
-        <span
-          className="absolute top-2 left-2 w-2.5 h-2.5 bg-red-500 rounded-full"
-          title="اعلان جدید"
-          aria-label="اعلان جدید"
-        />
-      )}
-      <span className="w-7 h-7 rounded-full bg-muted flex items-center justify-center text-xs font-bold font-num shrink-0">
-        {rank.toLocaleString("fa-IR")}
-      </span>
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2 mb-0.5">
-          <Badge variant="outline" className="font-mono text-[10px] shrink-0">{activity.code}</Badge>
-          <span className="text-sm font-medium truncate">{activity.title}</span>
-          <Badge
-            variant={isPms ? "default" : "secondary"}
-            className="text-[10px] shrink-0"
-            title={isPms ? "فعالیت PMS" : "فعالیت جاری"}
-          >
-            {isPms ? "PMS" : "جاری"}
-          </Badge>
-        </div>
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <Calendar className="w-3 h-3" />
-          <span>{formatJalali(activity.startDate)}</span>
-          <span>تا</span>
-          <span className={overdue ? "text-red-600 font-medium" : ""}>{formatJalali(activity.endDate)}</span>
-        </div>
-      </div>
-      <div className="flex items-center gap-1.5 shrink-0">
-        <Badge variant={us.variant} className="text-[10px]">{us.label}</Badge>
-        <Badge variant={ss.variant} className="text-[10px]">{ss.label}</Badge>
-        <span className="font-num text-xs font-bold w-10 text-center">
-          {Math.round(activity.progressPct).toLocaleString("fa-IR")}%
-        </span>
-      </div>
-    </Link>
-  );
-}
-
-// ============================================================
-// Section wrapper with its own filter/sort state
-// ============================================================
-
-function DashboardSection({
-  icon,
-  iconColor,
-  title,
-  description,
-  totalCount,
+function StrategicTopicSection({
+  topic,
+  topicLabel,
   items,
   notifSet,
   startOfToday,
-  renderMode,
+  endOfToday,
+  weekStart,
+  weekEnd,
+  defaultExpanded,
 }: {
-  icon: React.ReactNode;
-  iconColor: string;
-  title: string;
-  description: string;
-  totalCount: number;
+  topic: string;
+  topicLabel: string;
   items: UserDashboardActivity[];
   notifSet: Set<string>;
   startOfToday: Date;
-  renderMode: "grid" | "list";
+  endOfToday: Date;
+  weekStart: Date;
+  weekEnd: Date;
+  defaultExpanded?: boolean;
 }) {
+  const [expanded, setExpanded] = useState(defaultExpanded ?? items.length > 0);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [urgencyFilter, setUrgencyFilter] = useState<UrgencyFilter>("all");
-  const [sortBy, setSortBy] = useState<SortKey>(renderMode === "list" ? "priority" : "priority");
+  const [sortBy, setSortBy] = useState<SortKey>("priority");
+  const [timeFilter, setTimeFilter] = useState<TimeFilter>("all");
 
-  const processed = useMemo(
-    () => applyFilterSort(items, statusFilter, urgencyFilter, sortBy),
-    [items, statusFilter, urgencyFilter, sortBy]
+  // Apply time filter, then status/urgency, then sort
+  const timeFiltered = useMemo(
+    () => applyTimeFilter(items, timeFilter, startOfToday, endOfToday, weekStart, weekEnd),
+    [items, timeFilter, startOfToday, endOfToday, weekStart, weekEnd]
   );
-
-  const emptyText =
-    totalCount === 0
-      ? "موردی برای نمایش وجود ندارد"
-      : "با فیلتر فعلی موردی یافت نشد";
+  const processed = useMemo(
+    () => applyFilterSort(timeFiltered, statusFilter, urgencyFilter, sortBy),
+    [timeFiltered, statusFilter, urgencyFilter, sortBy]
+  );
 
   return (
     <Card>
       <CardHeader className="pb-3">
-        <div className="flex items-start justify-between gap-3 flex-wrap">
-          <div className="space-y-1 min-w-0">
-            <CardTitle className="text-base flex items-center gap-2">
-              <span className={iconColor}>{icon}</span>
-              {title}
-              <Badge variant="secondary" className="font-num text-xs">
-                {processed.length.toLocaleString("fa-IR")}
-                {processed.length !== totalCount && (
-                  <span className="text-muted-foreground mr-1">/ {totalCount.toLocaleString("fa-IR")}</span>
-                )}
-              </Badge>
-            </CardTitle>
-            <p className="text-xs text-muted-foreground">{description}</p>
+        <button
+          onClick={() => setExpanded(!expanded)}
+          className="flex items-center justify-between w-full text-right"
+        >
+          <div className="flex items-center gap-2 min-w-0">
+            {expanded ? (
+              <ChevronDown className="w-4 h-4 text-muted-foreground shrink-0" />
+            ) : (
+              <ChevronLeft className="w-4 h-4 text-muted-foreground shrink-0" />
+            )}
+            <CardTitle className="text-base">{topicLabel}</CardTitle>
+            <Badge variant="secondary" className="font-num text-xs">
+              {items.length.toLocaleString("fa-IR")} فعالیت
+            </Badge>
           </div>
-          <SectionControls
-            statusFilter={statusFilter}
-            setStatusFilter={setStatusFilter}
-            urgencyFilter={urgencyFilter}
-            setUrgencyFilter={setUrgencyFilter}
-            sortBy={sortBy}
-            setSortBy={setSortBy}
-          />
-        </div>
+        </button>
       </CardHeader>
-      <CardContent>
-        {processed.length === 0 ? (
-          <p className="text-sm text-muted-foreground text-center py-8">{emptyText}</p>
-        ) : renderMode === "grid" ? (
-          <div className="grid gap-3 md:grid-cols-2">
-            {processed.map((a) => (
-              <ActivityCard
-                key={a.id}
-                activity={a}
-                hasUnreadNotif={notifSet.has(a.id)}
-                overdue={
-                  !!a.endDate &&
-                  new Date(a.endDate) < startOfToday &&
-                  a.status !== "completed" &&
-                  a.status !== "cancelled"
-                }
-              />
-            ))}
+      {expanded && (
+        <CardContent className="space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <ToggleGroup
+              type="single"
+              value={timeFilter}
+              onValueChange={(v) => { if (v) setTimeFilter(v as TimeFilter); }}
+              variant="outline"
+              className="gap-1"
+            >
+              <ToggleGroupItem value="today" className="h-7 text-xs px-3">امروز</ToggleGroupItem>
+              <ToggleGroupItem value="week" className="h-7 text-xs px-3">این هفته</ToggleGroupItem>
+              <ToggleGroupItem value="all" className="h-7 text-xs px-3">همه</ToggleGroupItem>
+            </ToggleGroup>
+            <SectionControls
+              statusFilter={statusFilter}
+              setStatusFilter={setStatusFilter}
+              urgencyFilter={urgencyFilter}
+              setUrgencyFilter={setUrgencyFilter}
+              sortBy={sortBy}
+              setSortBy={setSortBy}
+            />
           </div>
-        ) : (
-          <div className="space-y-2">
-            {processed.map((a, idx) => (
-              <ActivityRow
-                key={a.id}
-                activity={a}
-                rank={idx + 1}
-                hasUnreadNotif={notifSet.has(a.id)}
-                overdue={
-                  !!a.endDate &&
-                  new Date(a.endDate) < startOfToday &&
-                  a.status !== "completed" &&
-                  a.status !== "cancelled"
-                }
-              />
-            ))}
-          </div>
-        )}
-      </CardContent>
+          {processed.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-6">
+              {items.length === 0
+                ? "موردی برای نمایش وجود ندارد"
+                : "با فیلتر فعلی موردی یافت نشد"}
+            </p>
+          ) : (
+            <div className="grid gap-3 md:grid-cols-2">
+              {processed.map((a) => (
+                <ActivityCard
+                  key={a.id}
+                  activity={a}
+                  hasUnreadNotif={notifSet.has(a.id)}
+                  overdue={
+                    !!a.endDate &&
+                    new Date(a.endDate) < startOfToday &&
+                    a.status !== "completed" &&
+                    a.status !== "cancelled"
+                  }
+                />
+              ))}
+            </div>
+          )}
+        </CardContent>
+      )}
     </Card>
   );
 }
@@ -437,7 +476,12 @@ function DashboardSection({
 // Main UserDashboard client component
 // ============================================================
 
-export function UserDashboard({ activities, personName, notifActivityIds }: UserDashboardProps) {
+export function UserDashboard({
+  activities,
+  personName,
+  notifActivityIds,
+  statusUpdates,
+}: UserDashboardProps) {
   const notifSet = useMemo(() => new Set(notifActivityIds), [notifActivityIds]);
 
   // ---- Date boundaries (Persian week starts Saturday) ----
@@ -450,64 +494,76 @@ export function UserDashboard({ activities, personName, notifActivityIds }: User
   const weekEnd = new Date(weekStart);
   weekEnd.setDate(weekEnd.getDate() + 7);
 
-  // ---- Today's activities ----
-  const todayActivities = useMemo(() => {
-    return activities.filter((a) => {
-      const s = toDate(a.startDate);
-      const e = toDate(a.endDate);
-      const active = a.status !== "completed" && a.status !== "cancelled";
-      if (s && e) {
-        if (s <= endOfToday && e >= startOfToday) return true;
-        if (e < startOfToday && active) return true;
-        return false;
-      }
-      if (e) {
-        if (e >= startOfToday && e < endOfToday) return true;
-        if (e < startOfToday && active) return true;
-        return false;
-      }
-      if (s) {
-        return s >= startOfToday && s < endOfToday;
-      }
-      return false;
-    });
-  }, [activities, startOfToday, endOfToday]);
-
-  // ---- This week's activities (excluding today's) ----
-  const todayIds = useMemo(() => new Set(todayActivities.map((a) => a.id)), [todayActivities]);
-  const weekActivities = useMemo(() => {
-    return activities.filter((a) => {
-      if (todayIds.has(a.id)) return false;
-      const s = toDate(a.startDate);
-      const e = toDate(a.endDate);
-      if (!s && !e) return false;
-      const start = s || e!;
-      const end = e || s!;
-      return start < weekEnd && end >= weekStart;
-    });
-  }, [activities, todayIds, weekStart, weekEnd]);
-
-  // ---- Top 10 by priority (urgency weight + priority) ----
-  // NOTE: this is a *suggested* initial ordering. The user can re-sort via controls.
-  const topPriorityBase = useMemo(() => {
-    return [...activities]
-      .filter((a) => a.status !== "completed" && a.status !== "cancelled")
-      .sort((a, b) => {
-        const ua = urgencyWeight[a.urgency] || 2;
-        const ub = urgencyWeight[b.urgency] || 2;
-        const scoreA = ua * 10 + (a.priority || 0);
-        const scoreB = ub * 10 + (b.priority || 0);
-        return scoreB - scoreA;
-      });
-  }, [activities]);
+  // ---- HR type filter ----
+  const [hrType, setHrType] = useState<HrTypeFilter>("all");
+  const hrFiltered = useMemo(() => {
+    if (hrType === "all") return activities;
+    if (hrType === "mine") return activities;
+    // "needed me" — only activities flagged needsMe
+    return activities.filter((a) => a.needsMe);
+  }, [activities, hrType]);
 
   // ---- Stats ----
-  const totalAssigned = activities.length;
-  const completedCount = activities.filter((a) => a.status === "completed").length;
-  const overdueCount = activities.filter((a) => {
-    if (a.status === "completed" || a.status === "cancelled") return false;
-    return a.endDate ? new Date(a.endDate) < startOfToday : false;
+  const totalAssigned = hrFiltered.length;
+  const inProgressCount = hrFiltered.filter((a) => a.status === "in_progress").length;
+  // Completed this month (Persian/Jalali month — approximate using Gregorian month)
+  const currentMonth = now.getMonth();
+  const currentYear = now.getFullYear();
+  const completedThisMonth = hrFiltered.filter((a) => {
+    if (a.status !== "completed") return false;
+    const upd = new Date(a.updatedAt);
+    return upd.getMonth() === currentMonth && upd.getFullYear() === currentYear;
   }).length;
+  const avgProgress =
+    totalAssigned > 0
+      ? Math.round(
+          hrFiltered.reduce((sum, a) => sum + (a.progressPct || 0), 0) / totalAssigned
+        )
+      : 0;
+
+  // ---- Pie chart: distribution by status ----
+  const statusChartData = useMemo(() => {
+    const counts: Record<string, number> = {
+      pending: 0,
+      in_progress: 0,
+      completed: 0,
+      on_hold: 0,
+    };
+    hrFiltered.forEach((a) => {
+      if (counts[a.status] !== undefined) counts[a.status]++;
+      else counts[a.status] = 0;
+    });
+    return Object.entries(counts).map(([key, value]) => ({
+      name: statusMap[key]?.label || key,
+      value,
+      color: PIE_COLORS_STATUS[key] || "#94a3b8",
+    }));
+  }, [hrFiltered]);
+
+  // ---- Bar chart: activity count by strategic topic ----
+  const topicChartData = useMemo(() => {
+    return strategicTopicOrder.map((t) => ({
+      topic: t,
+      label: strategicTopicMap[t].split(" - ")[1],
+      count: hrFiltered.filter((a) => a.strategicTopic === t).length,
+    }));
+  }, [hrFiltered]);
+
+  // ---- Activities grouped by strategic topic ----
+  // Activities without a strategic topic go into "سایر" (other)
+  const groupedByTopic = useMemo(() => {
+    const groups: Record<string, UserDashboardActivity[]> = {};
+    strategicTopicOrder.forEach((t) => {
+      groups[t] = [];
+    });
+    groups["other"] = [];
+    hrFiltered.forEach((a) => {
+      const t = a.strategicTopic;
+      if (t && groups[t]) groups[t].push(a);
+      else groups["other"].push(a);
+    });
+    return groups;
+  }, [hrFiltered]);
 
   return (
     <div className="space-y-6">
@@ -519,59 +575,262 @@ export function UserDashboard({ activities, personName, notifActivityIds }: User
             آنچه باید امروز و این هفته انجام دهید
           </p>
         </div>
-        <div className="flex gap-2">
-          <Badge variant="secondary" className="gap-1 px-3 py-1.5 text-xs">
-            <Activity className="w-3.5 h-3.5" />
-            کل فعالیت‌ها: <span className="font-num font-bold">{totalAssigned.toLocaleString("fa-IR")}</span>
-          </Badge>
-          <Badge variant="outline" className="gap-1 px-3 py-1.5 text-xs">
-            <CheckCircle2 className="w-3.5 h-3.5" />
-            تکمیل شده: <span className="font-num font-bold">{completedCount.toLocaleString("fa-IR")}</span>
-          </Badge>
-          {overdueCount > 0 && (
-            <Badge variant="destructive" className="gap-1 px-3 py-1.5 text-xs">
-              <AlertTriangle className="w-3.5 h-3.5" />
-              عقب‌افتاده: <span className="font-num font-bold">{overdueCount.toLocaleString("fa-IR")}</span>
-            </Badge>
-          )}
-        </div>
+        <ToggleGroup
+          type="single"
+          value={hrType}
+          onValueChange={(v) => { if (v) setHrType(v as HrTypeFilter); }}
+          variant="outline"
+        >
+          <ToggleGroupItem value="mine" className="text-xs">فعالیت‌های من</ToggleGroupItem>
+          <ToggleGroupItem value="needed" className="text-xs">فعالیت‌های نیاز به من</ToggleGroupItem>
+          <ToggleGroupItem value="all" className="text-xs">همه فعالیت‌ها</ToggleGroupItem>
+        </ToggleGroup>
       </div>
 
-      <DashboardSection
-        icon={<Clock className="w-4 h-4 text-amber-600" />}
-        iconColor=""
-        title="فعالیت‌های امروز"
-        description="فعالیت‌هایی که امروز در بازه زمانی آن‌ها هستید یا از موعد آن‌ها گذشته است"
-        totalCount={todayActivities.length}
-        items={todayActivities}
-        notifSet={notifSet}
-        startOfToday={startOfToday}
-        renderMode="grid"
-      />
+      {/* Top section — stat cards */}
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <Card>
+          <CardContent className="p-4 flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shrink-0">
+              <ActivityIcon className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <p className="text-2xl font-bold font-num">
+                {totalAssigned.toLocaleString("fa-IR")}
+              </p>
+              <p className="text-xs text-muted-foreground">تعداد کل فعالیت‌ها</p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4 flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-blue-500 to-cyan-600 flex items-center justify-center shrink-0">
+              <Clock className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <p className="text-2xl font-bold font-num">
+                {inProgressCount.toLocaleString("fa-IR")}
+              </p>
+              <p className="text-xs text-muted-foreground">در حال انجام</p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4 flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center shrink-0">
+              <CheckCircle2 className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <p className="text-2xl font-bold font-num">
+                {completedThisMonth.toLocaleString("fa-IR")}
+              </p>
+              <p className="text-xs text-muted-foreground">تکمیل شده (این ماه)</p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4 flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center shrink-0">
+              <Target className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <p className="text-2xl font-bold font-num">
+                {avgProgress.toLocaleString("fa-IR")}%
+              </p>
+              <p className="text-xs text-muted-foreground">میانگین پیشرفت</p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
 
-      <DashboardSection
-        icon={<Calendar className="w-4 h-4 text-emerald-600" />}
-        iconColor=""
-        title="فعالیت‌های این هفته"
-        description="فعالیت‌هایی که در جریان این هفته (شنبه تا جمعه) برنامه‌ریزی شده‌اند"
-        totalCount={weekActivities.length}
-        items={weekActivities}
-        notifSet={notifSet}
-        startOfToday={startOfToday}
-        renderMode="grid"
-      />
+      {/* Top section — charts */}
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">توزیع فعالیت‌ها بر اساس وضعیت</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {totalAssigned === 0 ? (
+              <div className="h-[280px] flex items-center justify-center text-muted-foreground text-sm">
+                داده‌ای موجود نیست
+              </div>
+            ) : (
+              <div className="h-[280px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={statusChartData}
+                      cx="50%"
+                      cy="50%"
+                      labelLine={false}
+                      outerRadius={90}
+                      innerRadius={40}
+                      dataKey="value"
+                      label={({ value }: { value?: number }) =>
+                        value ? value.toLocaleString("fa-IR") : ""
+                      }
+                    >
+                      {statusChartData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.color} />
+                      ))}
+                    </Pie>
+                    <Tooltip
+                      formatter={(value: number, name: string) => [
+                        value.toLocaleString("fa-IR"),
+                        name,
+                      ]}
+                    />
+                    <Legend />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+          </CardContent>
+        </Card>
 
-      <DashboardSection
-        icon={<Target className="w-4 h-4 text-rose-600" />}
-        iconColor=""
-        title="فعالیت‌های با بالاترین اولویت"
-        description="بر اساس فوریت و اولویت — ابتدا فوری‌ترین‌ها (امکان تغییر مرتب‌سازی)"
-        totalCount={topPriorityBase.length}
-        items={topPriorityBase}
-        notifSet={notifSet}
-        startOfToday={startOfToday}
-        renderMode="list"
-      />
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">تعداد فعالیت بر اساس موضوع استراتژیک</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="h-[280px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={topicChartData} layout="vertical" margin={{ right: 16, left: 16 }}>
+                  <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                  <XAxis type="number" tick={{ fontSize: 12 }} />
+                  <YAxis
+                    type="category"
+                    dataKey="label"
+                    width={120}
+                    tick={{ fontSize: 11 }}
+                  />
+                  <Tooltip
+                    formatter={(value: number) => [value.toLocaleString("fa-IR"), "تعداد"]}
+                  />
+                  <Bar dataKey="count" radius={[0, 6, 6, 0]}>
+                    {topicChartData.map((_, index) => (
+                      <Cell key={`bar-${index}`} fill={BAR_COLORS[index % BAR_COLORS.length]} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Middle section — collapsible topics */}
+      <div className="space-y-3">
+        {strategicTopicOrder.map((t) => (
+          <StrategicTopicSection
+            key={t}
+            topic={t}
+            topicLabel={strategicTopicMap[t]}
+            items={groupedByTopic[t]}
+            notifSet={notifSet}
+            startOfToday={startOfToday}
+            endOfToday={endOfToday}
+            weekStart={weekStart}
+            weekEnd={weekEnd}
+            defaultExpanded={groupedByTopic[t].length > 0}
+          />
+        ))}
+        {groupedByTopic["other"].length > 0 && (
+          <StrategicTopicSection
+            topic="other"
+            topicLabel="سایر فعالیت‌ها (بدون موضوع استراتژیک)"
+            items={groupedByTopic["other"]}
+            notifSet={notifSet}
+            startOfToday={startOfToday}
+            endOfToday={endOfToday}
+            weekStart={weekStart}
+            weekEnd={weekEnd}
+            defaultExpanded
+          />
+        )}
+      </div>
+
+      {/* Bottom section — recent status updates */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <Clock className="w-4 h-4 text-muted-foreground" />
+            آخرین وضعیت فعالیت‌ها
+          </CardTitle>
+          <p className="text-xs text-muted-foreground">
+            ۱۰ بروزرسانی اخیر در فعالیت‌های PMS و جاری
+          </p>
+        </CardHeader>
+        <CardContent>
+          {statusUpdates.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-8">
+              هنوز بروزرسانی ثبت نشده است
+            </p>
+          ) : (
+            <div className="space-y-2 max-h-96 overflow-y-auto">
+              {statusUpdates.map((su) => {
+                const href =
+                  su.entityType === "wbs"
+                    ? `/wbs/${su.entityId}`
+                    : `/activities/${su.entityId}`;
+                const prevLabel =
+                  statusMap[su.previousStatus || ""]?.label || su.previousStatus || "-";
+                const newLabel =
+                  statusMap[su.newStatus]?.label || su.newStatus;
+                const typeBadge =
+                  su.entityType === "wbs" ? "PMS" : "جاری";
+                return (
+                  <Link
+                    key={su.id}
+                    href={href}
+                    className="flex items-center gap-3 p-3 rounded-lg border hover:bg-muted/50 transition-colors"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 mb-0.5 flex-wrap">
+                        <Badge variant="outline" className="font-mono text-[10px] shrink-0">
+                          {su.entityCode}
+                        </Badge>
+                        <Badge
+                          variant={su.entityType === "wbs" ? "default" : "secondary"}
+                          className="text-[10px] shrink-0"
+                        >
+                          {typeBadge}
+                        </Badge>
+                        <span className="text-sm font-medium truncate">
+                          {su.entityTitle}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <span>{prevLabel}</span>
+                        <span>→</span>
+                        <span className="font-medium text-foreground">{newLabel}</span>
+                        {su.progressPct != null && (
+                          <Badge variant="secondary" className="font-num text-[10px]">
+                            {Math.round(su.progressPct).toLocaleString("fa-IR")}%
+                          </Badge>
+                        )}
+                        {su.notes && (
+                          <span className="text-muted-foreground truncate max-w-[200px]">
+                            — {su.notes}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="shrink-0 text-left">
+                      <p className="text-xs text-muted-foreground">
+                        {su.personelName || "سیستم"}
+                      </p>
+                      <p className="text-xs text-muted-foreground font-num">
+                        {formatJalaliDateTime(su.createdAt)}
+                      </p>
+                    </div>
+                  </Link>
+                );
+              })}
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

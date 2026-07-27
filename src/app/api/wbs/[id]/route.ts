@@ -138,6 +138,11 @@ export async function PUT(
     hierarchyPath = newWbsCode.split(".").join("/");
   }
 
+  // ----- Auto-compute strategicTopic from wbsCode -----
+  // "1" → null (vision), "1.1" → "1.1", "1.2.3.4" → "1.2"
+  const wbsParts = newWbsCode.split(".");
+  const strategicTopic = wbsParts.length >= 2 ? `${wbsParts[0]}.${wbsParts[1]}` : null;
+
   // ----- Auto-link hrPlan → hrActual -----
   // If hrPlan is explicitly provided in the PUT, find personnel assigned to
   // those org positions and merge them into hrActual (preserving existing).
@@ -196,6 +201,7 @@ export async function PUT(
         urgency: data.urgency ?? existing.urgency,
         priority: data.priority ?? existing.priority,
         description: data.description ?? existing.description,
+        strategicTopic,
       },
     });
 

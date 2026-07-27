@@ -104,6 +104,11 @@ export async function POST(req: NextRequest) {
     ? `${parentHierarchyPath}/${data.wbsCode}`
     : data.wbsCode.split(".").join("/");
 
+  // ----- Auto-compute strategicTopic from wbsCode -----
+  // "1" → null (vision), "1.1" → "1.1", "1.2.3.4" → "1.2", "1.3.2.1.5" → "1.3"
+  const wbsParts = data.wbsCode.split(".");
+  const strategicTopic = wbsParts.length >= 2 ? `${wbsParts[0]}.${wbsParts[1]}` : null;
+
   // ----- Auto-link hrPlan → hrActual -----
   // If hrPlan (org position IDs) is provided, find personnel assigned to those
   // org positions and merge them into hrActual (no duplicates).
@@ -158,6 +163,7 @@ export async function POST(req: NextRequest) {
         urgency: data.urgency || "normal",
         priority: data.priority ?? 3,
         description: data.description || null,
+        strategicTopic,
       },
     });
 

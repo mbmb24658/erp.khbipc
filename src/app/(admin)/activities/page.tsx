@@ -88,6 +88,7 @@ interface Activity {
   priority: number;
   status: string;
   progressPct: number;
+  strategicTopic: string | null;
   hrPlan: string | null;
   hrActual: string | null;
   notes: string | null;
@@ -124,6 +125,22 @@ const statusOptions = [
   { value: "on_hold", label: "متوقف (On Hold)" },
   { value: "cancelled", label: "لغو شده" },
 ];
+
+const strategicTopicOptions = [
+  { value: "1.1", label: "1.1 - حکمرانی دارایی‌محور" },
+  { value: "1.2", label: "1.2 - دارایی‌های داخلی" },
+  { value: "1.3", label: "1.3 - دارایی‌های بیرونی" },
+  { value: "1.4", label: "1.4 - دارایی‌های دانشی" },
+  { value: "1.5", label: "1.5 - پایداری مالی" },
+];
+
+const strategicTopicMap: Record<string, string> = {
+  "1.1": "1.1 - حکمرانی دارایی‌محور",
+  "1.2": "1.2 - دارایی‌های داخلی",
+  "1.3": "1.3 - دارایی‌های بیرونی",
+  "1.4": "1.4 - دارایی‌های دانشی",
+  "1.5": "1.5 - پایداری مالی",
+};
 
 const PIE_COLORS = ["#f59e0b", "#3b82f6", "#10b981", "#8b5cf6", "#ef4444"];
 
@@ -307,15 +324,23 @@ export default function ActivitiesPage() {
     },
     { key: "progressPct", label: "درصد پیشرفت (0-100)", type: "number", min: 0, max: 100 },
     {
+      key: "strategicTopic",
+      label: "موضوع استراتژیک",
+      type: "select",
+      options: strategicTopicOptions,
+      required: true,
+      helpText: "موضوع استراتژیک مرتبط با این فعالیت",
+    },
+    {
       key: "hrPlan",
-      label: "سمت‌های سازمانی برنامه‌ریزی شده",
+      label: "منابع انسانی برنامه — سمت‌ها",
       type: "multiselect",
       options: orgCharts.map((o) => ({ value: o.id, label: `${o.orgId} - ${o.position}` })),
       helpText: "سمت‌های سازمانی مورد نیاز فعالیت",
     },
     {
       key: "hrActual",
-      label: "اشخاص حقیقی اختصاص یافته",
+      label: "منابع انسانی واقعی — پرسنل",
       type: "multiselect",
       options: personel.map((p) => ({ value: p.id, label: `${p.personelId} - ${p.name}` })),
       helpText: "پرسنل واقعی اختصاص یافته به فعالیت",
@@ -386,6 +411,7 @@ export default function ActivitiesPage() {
         endDate: editing.endDate ? editing.endDate.split("T")[0] : "",
         hrPlan: parseArrayField(editing.hrPlan),
         hrActual: parseArrayField(editing.hrActual),
+        strategicTopic: editing.strategicTopic || "",
       }
     : {
         code: presetCode,
@@ -393,6 +419,7 @@ export default function ActivitiesPage() {
         urgency: "normal",
         priority: 3,
         progressPct: 0,
+        strategicTopic: "",
         hrPlan: [],
         hrActual: [],
       };
@@ -651,6 +678,13 @@ export default function ActivitiesPage() {
                     </div>
                     <Badge variant={ss.variant}>{ss.label}</Badge>
                   </div>
+                  {a.strategicTopic && (
+                    <div>
+                      <Badge variant="secondary" className="text-[10px]">
+                        {strategicTopicMap[a.strategicTopic] || a.strategicTopic}
+                      </Badge>
+                    </div>
+                  )}
                   <h3 className="font-semibold leading-snug">{a.title}</h3>
                   {a.asset && (
                     <div className="text-xs text-muted-foreground">

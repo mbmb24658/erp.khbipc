@@ -1,10 +1,21 @@
 "use client";
 import { Button } from "@/components/ui/button";
-import { Pencil } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
+import { Pencil, RefreshCw, Loader2 } from "lucide-react";
 import { useState } from "react";
 import { EditDialog } from "@/components/edit-dialog";
 import { useRouter } from "next/navigation";
 import { notifySuccess, notifyError } from "@/lib/notify";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 interface WBSDetailClientProps {
   wbs: any;
@@ -80,6 +91,105 @@ export function WBSDetailClient({ wbs }: WBSDetailClientProps) {
         initialData={initialData}
         onSubmit={handleSave}
       />
+    </div>
+  );
+}
+
+// ============================================================
+// WBS Status Update Form — used inside the WBS detail page
+// Allows any user with assignment to update WBS status + progress
+// ============================================================
+interface WBSStatusUpdateFormProps {
+  wbsId: string;
+  currentStatus: string;
+  currentProgressPct: number;
+}
+
+export function WBSStatusUpdateForm({
+  wbsId,
+  currentStatus,
+  currentProgressPct,
+}: WBSStatusUpdateFormProps) {
+  const router = useRouter();
+  const [status, setStatus] = useState(currentStatus || "pending");
+  const [progressPct, setProgressPct] = useState<string>(
+    String(currentProgressPct ?? 0)
+  );
+  const [notes, setNotes] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const submit = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/wbs/${wbsId}/status-update`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          newStatus: status,
+          progressPct: Number(progressPct),
+          notes,
+        }),
+      });
+      if (!res.ok) {
+        const e = await res.json();
+        throw new Error(e.error || "خطا در ثبت");
+      }
+      notifySuccess("وضعیت فعالیت بروزرسانی شد");
+      setNotes("");
+      router.refresh();
+    } catch (e: any) {
+      notifyError(e.message || "خطا در ثبت");
+    }
+    setLoading(false);
+  };
+
+  return (
+    <div className="border rounded-lg p-4 space-y-3 bg-muted/30">
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div className="space-y-1.5">
+          <Label>وضعیت جدید</Label>
+          <Select value={status} onValueChange={setStatus}>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="pending">در انتظار</SelectItem>
+              <SelectItem value="in_progress">در حال انجام</SelectItem>
+              <SelectItem value="completed">تکمیل شده</SelectItem>
+              <SelectItem value="on_hold">متوقف</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-1.5">
+          <Label>درصد پیشرفت (0-100)</Label>
+          <Input
+            type="number"
+            min={0}
+            max={100}
+            value={progressPct}
+            onChange={(e) => setProgressPct(e.target.value)}
+          />
+        </div>
+      </div>
+      <div className="space-y-1.5">
+        <Label>یادداشت</Label>
+        <Textarea
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          rows={2}
+          placeholder="توضیحات اختیاری..."
+        />
+      </div>
+      <div className="flex justify-end">
+        <Button onClick={submit} disabled={loading}>
+          {loading ? (
+            <Loader2 className="w-4 h-4 ml-1 animate-spin" />
+          ) : (
+            <RefreshCw className="w-4 h-4 ml-1" />
+          )}
+          ثبت بروزرسانی
+        </Button>
+      </div>
     </div>
   );
 }

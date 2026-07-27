@@ -123,6 +123,7 @@ export async function POST(req: NextRequest) {
         progressPct: data.progressPct ?? 0,
         hrPlan: data.hrPlan || null,
         hrActual: finalHrActual,
+        strategicTopic: data.strategicTopic || null,
         notes: data.notes || null,
         createdById: (session.user as any).id,
       },

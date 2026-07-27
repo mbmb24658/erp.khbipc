@@ -8,6 +8,7 @@ import { SCurveChart } from "@/components/s-curve-chart";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { UserDashboard as UserDashboardClient } from "./user-dashboard";
+import { formatJalaliDateTime } from "@/lib/jalali";
 
 export const dynamic = "force-dynamic";
 
@@ -34,14 +35,19 @@ export default async function DashboardPage() {
 // (8 stat cards removed per redesign)
 // ============================================================
 async function AdminDashboard() {
-  const [wbsRoot, recentActivities, level2WbsList] = await Promise.all([
+  const [wbsRoot, recentActivities, recentWbs, level2WbsList] = await Promise.all([
     db.wBS.findFirst({ where: { level: 1 }, orderBy: { wbsCode: "asc" } }),
     db.activity.findMany({
-      take: 5,
+      take: 8,
       orderBy: { updatedAt: "desc" },
       include: {
         personAssignments: { include: { personel: true } },
       },
+    }),
+    db.wBS.findMany({
+      take: 8,
+      orderBy: { updatedAt: "desc" },
+      where: { level: { gte: 4 } },
     }),
     db.wBS.findMany({
       where: { level: 2 },
@@ -51,6 +57,43 @@ async function AdminDashboard() {
       },
     }),
   ]);
+
+  // Merge recent activities + WBS into one sorted list, take 8
+  type RecentItem = {
+    id: string;
+    code: string;
+    title: string;
+    status: string;
+    progressPct: number;
+    progressActual?: number;
+    updatedAt: Date;
+    type: "pms" | "activity";
+    assigneeName?: string | null;
+  };
+  const recentItems: RecentItem[] = [
+    ...recentActivities.map((a) => ({
+      id: a.id,
+      code: a.code,
+      title: a.title,
+      status: a.status,
+      progressPct: a.progressPct,
+      updatedAt: a.updatedAt,
+      type: "activity" as const,
+      assigneeName: a.personAssignments[0]?.personel?.name ?? null,
+    })),
+    ...recentWbs.map((w) => ({
+      id: w.id,
+      code: w.wbsCode,
+      title: w.title,
+      status: w.status,
+      progressPct: Math.round((w.progressActual || 0) * 100),
+      updatedAt: w.updatedAt,
+      type: "pms" as const,
+      assigneeName: null as string | null,
+    })),
+  ]
+    .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())
+    .slice(0, 8);
 
   const rootMonthlyProgress = wbsRoot
     ? await db.wBSMonthlyProgress.findMany({
@@ -73,17 +116,45 @@ async function AdminDashboard() {
         select: {
           wbsAssignments: true,
           activityAssignments: true,
-          kpiAssignments: true,
         },
       },
     },
     orderBy: { createdAt: "desc" },
   });
+
+  // For each personel, compute:
+  //  - PMS count: WBS items where level >= 4 AND personelId is in wbs.hrActual JSON array
+  //  - فعالیت count: Activity items where the personel is in personAssignments (== activityAssignments count)
+  // Fetch all level-4+ WBS items once and filter by hrActual
+  const allLevel4Wbs = await db.wBS.findMany({
+    where: { level: { gte: 4 } },
+    select: { id: true, hrActual: true },
+  });
+
   const sortedWorkload = personelWorkload
-    .map((p) => ({
-      ...p,
-      totalLoad: p._count.wbsAssignments + p._count.activityAssignments + p._count.kpiAssignments,
-    }))
+    .map((p) => {
+      // Count PMS where personelId is in hrActual JSON
+      let pmsCount = 0;
+      for (const w of allLevel4Wbs) {
+        if (!w.hrActual) continue;
+        try {
+          const ids: string[] = JSON.parse(w.hrActual);
+          if (Array.isArray(ids) && ids.includes(p.id)) {
+            pmsCount++;
+          }
+        } catch {
+          // ignore
+        }
+      }
+      const activityCount = p._count.activityAssignments;
+      const totalLoad = pmsCount + activityCount;
+      return {
+        ...p,
+        pmsCount,
+        activityCount,
+        totalLoad,
+      };
+    })
     .sort((a, b) => b.totalLoad - a.totalLoad)
     .slice(0, 12);
 
@@ -195,45 +266,53 @@ async function AdminDashboard() {
           <CardTitle className="text-base">آخرین فعالیت‌های به‌روزرسانی شده</CardTitle>
         </CardHeader>
         <CardContent>
-          {recentActivities.length === 0 ? (
+          {recentItems.length === 0 ? (
             <p className="text-sm text-muted-foreground text-center py-8">
               هنوز فعالیتی ثبت نشده است
             </p>
           ) : (
             <div className="space-y-2">
-              {recentActivities.map((act) => (
-                <Link
-                  key={act.id}
-                  href={`/activities/${act.id}`}
-                  className="flex items-center justify-between p-3 rounded-lg border hover:bg-muted/50 transition-colors"
-                >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <Badge variant="outline" className="font-mono text-xs">
-                      {act.code}
-                    </Badge>
-                    <span className="text-sm font-medium truncate">{act.title}</span>
-                  </div>
-                  <div className="flex items-center gap-3 text-xs text-muted-foreground shrink-0">
-                    {act.personAssignments[0]?.personel && (
-                      <span>{act.personAssignments[0].personel.name}</span>
-                    )}
-                    <Badge
-                      variant={
-                        act.status === "completed" ? "default" :
-                        act.status === "in_progress" ? "secondary" : "outline"
-                      }
-                      className="text-xs"
-                    >
-                      {act.status === "completed" ? "تکمیل" :
-                       act.status === "in_progress" ? "در حال انجام" :
-                       act.status === "pending" ? "در انتظار" : act.status}
-                    </Badge>
-                    <span className="font-num">
-                      {Math.round((act.progressPct || 0) * 100).toLocaleString("fa-IR")}%
-                    </span>
-                  </div>
-                </Link>
-              ))}
+              {recentItems.map((item) => {
+                const href = item.type === "pms" ? `/wbs/${item.id}` : `/activities/${item.id}`;
+                return (
+                  <Link
+                    key={`${item.type}-${item.id}`}
+                    href={href}
+                    className="flex items-center justify-between p-3 rounded-lg border hover:bg-muted/50 transition-colors"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <Badge
+                        variant={item.type === "pms" ? "default" : "secondary"}
+                        className="text-[10px] shrink-0"
+                      >
+                        {item.type === "pms" ? "PMS" : "جاری"}
+                      </Badge>
+                      <Badge variant="outline" className="font-mono text-xs shrink-0">
+                        {item.code}
+                      </Badge>
+                      <span className="text-sm font-medium truncate">{item.title}</span>
+                    </div>
+                    <div className="flex items-center gap-3 text-xs text-muted-foreground shrink-0">
+                      {item.assigneeName && <span>{item.assigneeName}</span>}
+                      <Badge
+                        variant={
+                          item.status === "completed" ? "default" :
+                          item.status === "in_progress" ? "secondary" : "outline"
+                        }
+                        className="text-xs"
+                      >
+                        {item.status === "completed" ? "تکمیل" :
+                         item.status === "in_progress" ? "در حال انجام" :
+                         item.status === "pending" ? "در انتظار" :
+                         item.status === "on_hold" ? "متوقف" : item.status}
+                      </Badge>
+                      <span className="font-num">
+                        {Math.round(item.progressPct || 0).toLocaleString("fa-IR")}%
+                      </span>
+                    </div>
+                  </Link>
+                );
+              })}
             </div>
           )}
         </CardContent>
@@ -255,10 +334,6 @@ async function AdminDashboard() {
           ) : (
             <div className="space-y-2">
               {sortedWorkload.map((p, idx) => {
-                const activityCount = p._count.activityAssignments;
-                const wbsCount = p._count.wbsAssignments;
-                const kpiCount = p._count.kpiAssignments;
-                const totalLoad = p.totalLoad;
                 return (
                   <div
                     key={p.id}
@@ -280,20 +355,17 @@ async function AdminDashboard() {
                     </div>
                     <div className="flex items-center gap-2 text-xs shrink-0">
                       <span className="bg-muted/50 rounded px-2 py-1">
-                        فعالیت: <span className="font-bold font-num">{activityCount.toLocaleString("fa-IR")}</span>
+                        PMS: <span className="font-bold font-num">{p.pmsCount.toLocaleString("fa-IR")}</span>
                       </span>
                       <span className="bg-muted/50 rounded px-2 py-1">
-                        WBS: <span className="font-bold font-num">{wbsCount.toLocaleString("fa-IR")}</span>
-                      </span>
-                      <span className="bg-muted/50 rounded px-2 py-1">
-                        KPI: <span className="font-bold font-num">{kpiCount.toLocaleString("fa-IR")}</span>
+                        فعالیت: <span className="font-bold font-num">{p.activityCount.toLocaleString("fa-IR")}</span>
                       </span>
                     </div>
                     <Badge
-                      variant={totalLoad > 5 ? "destructive" : totalLoad > 2 ? "secondary" : "outline"}
+                      variant={p.totalLoad > 5 ? "destructive" : p.totalLoad > 2 ? "secondary" : "outline"}
                       className="font-num shrink-0"
                     >
-                      {totalLoad.toLocaleString("fa-IR")}
+                      {p.totalLoad.toLocaleString("fa-IR")}
                     </Badge>
                   </div>
                 );
@@ -366,6 +438,7 @@ async function UserDashboard({ userId }: { userId: string }) {
       status: true,
       progressPct: true,
       priority: true,
+      strategicTopic: true,
       updatedAt: true,
     },
     orderBy: [{ priority: "desc" }, { updatedAt: "desc" }],
@@ -390,41 +463,66 @@ async function UserDashboard({ userId }: { userId: string }) {
       urgency: true,
       priority: true,
       hrActual: true,
+      hrPlan: true,
+      strategicTopic: true,
+      status: true,
       updatedAt: true,
     },
   });
 
+  // Get the user's orgChartId (to flag WBS items where the user's position is needed in hrPlan)
+  const personelRec = await db.personel.findUnique({
+    where: { id: personelId },
+    select: { orgChartId: true },
+  });
+  const myOrgChartId = personelRec?.orgChartId || null;
+
+  // Helper: parse JSON array of IDs
+  const parseIds = (val: string | null | undefined): string[] => {
+    if (!val) return [];
+    try {
+      const parsed = JSON.parse(val);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  };
+
   // Filter WBS where user's personelId is in hrActual JSON array
   const userWbsActivities = allWbs
     .filter((w) => {
-      if (!w.hrActual) return false;
-      try {
-        const ids: string[] = JSON.parse(w.hrActual);
-        return Array.isArray(ids) && ids.includes(personelId);
-      } catch {
-        return false;
-      }
+      const ids = parseIds(w.hrActual);
+      return ids.includes(personelId);
     })
-    .map((w) => ({
-      id: w.id,
-      code: w.wbsCode,
-      title: w.title,
-      description: null as string | null,
-      startDate: w.startDate ? w.startDate.toISOString() : null,
-      endDate: w.finishDate ? w.finishDate.toISOString() : null,
-      durationDays: null as number | null,
-      urgency: w.urgency || "normal",
-      priority: w.priority ?? 3,
-      status:
+    .map((w) => {
+      // "needs me" = user's org position is in hrPlan AND user is in hrActual
+      const planIds = parseIds(w.hrPlan);
+      const needsMe = !!myOrgChartId && planIds.includes(myOrgChartId);
+      // Status: prefer explicit WBS status, fall back to derived from progress
+      const derivedStatus =
         w.progressActual >= 1
           ? "completed"
           : w.progressActual > 0
           ? "in_progress"
-          : "pending",
-      progressPct: (w.progressActual || 0) * 100,
-      updatedAt: w.updatedAt.toISOString(),
-      type: "pms" as const,
-    }));
+          : "pending";
+      return {
+        id: w.id,
+        code: w.wbsCode,
+        title: w.title,
+        description: null as string | null,
+        startDate: w.startDate ? w.startDate.toISOString() : null,
+        endDate: w.finishDate ? w.finishDate.toISOString() : null,
+        durationDays: null as number | null,
+        urgency: w.urgency || "normal",
+        priority: w.priority ?? 3,
+        status: w.status || derivedStatus,
+        progressPct: (w.progressActual || 0) * 100,
+        updatedAt: w.updatedAt.toISOString(),
+        type: "pms" as const,
+        strategicTopic: w.strategicTopic || null,
+        needsMe,
+      };
+    });
 
   // Fetch unread notifications for this user linked to activities
   // (notifications use actionUrl = /activities/{activityId})
@@ -452,15 +550,75 @@ async function UserDashboard({ userId }: { userId: string }) {
         endDate: a.endDate ? a.endDate.toISOString() : null,
         updatedAt: a.updatedAt.toISOString(),
         type: "activity" as const,
+        strategicTopic: a.strategicTopic || null,
+        needsMe: false,
       })),
     ...userWbsActivities.filter((w) => w.status !== "completed" && (w.progressPct || 0) < 100),
   ];
+
+  // ---- Fetch recent status updates (WBS + Activity) — last 10 ----
+  // Only include updates for activities / WBS items the user is assigned to.
+  const myActivityIds = assignedActivities.map((a) => a.id);
+  const myWbsIds = userWbsActivities.map((w) => w.id);
+
+  const [wbsStatusUpdates, activityStatusUpdates] = await Promise.all([
+    db.wBSStatusUpdate.findMany({
+      where: { wbsId: { in: myWbsIds } },
+      include: {
+        personel: { select: { name: true } },
+        wbs: { select: { wbsCode: true, title: true } },
+      },
+      orderBy: { createdAt: "desc" },
+      take: 20,
+    }),
+    db.activityStatusUpdate.findMany({
+      where: { activityId: { in: myActivityIds } },
+      include: {
+        personel: { select: { name: true } },
+        activity: { select: { code: true, title: true } },
+      },
+      orderBy: { createdAt: "desc" },
+      take: 20,
+    }),
+  ]);
+
+  const recentStatusUpdates = [
+    ...wbsStatusUpdates.map((su) => ({
+      id: su.id,
+      entityType: "wbs" as const,
+      entityId: su.wbsId,
+      entityCode: su.wbs?.wbsCode || "",
+      entityTitle: su.wbs?.title || "",
+      previousStatus: su.previousStatus,
+      newStatus: su.newStatus,
+      progressPct: su.progressPct,
+      notes: su.notes,
+      createdAt: su.createdAt.toISOString(),
+      personelName: su.personel?.name || null,
+    })),
+    ...activityStatusUpdates.map((su) => ({
+      id: su.id,
+      entityType: "activity" as const,
+      entityId: su.activityId,
+      entityCode: su.activity?.code || "",
+      entityTitle: su.activity?.title || "",
+      previousStatus: su.previousStatus,
+      newStatus: su.newStatus,
+      progressPct: su.progressPct,
+      notes: su.notes,
+      createdAt: su.createdAt.toISOString(),
+      personelName: su.personel?.name || null,
+    })),
+  ]
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    .slice(0, 10);
 
   return (
     <UserDashboardClient
       activities={serialized}
       personName={personName}
       notifActivityIds={notifActivityIds}
+      statusUpdates={recentStatusUpdates}
     />
   );
 }

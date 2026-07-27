@@ -11,14 +11,29 @@ import {
   Users,
   DollarSign,
   AlertTriangle,
-  Target,
   Package,
   TrendingUp,
+  RefreshCw,
 } from "lucide-react";
-import { WBSDetailClient } from "./wbs-detail-client";
-import { formatJalali, formatJalaliLong } from "@/lib/jalali";
+import { WBSDetailClient, WBSStatusUpdateForm } from "./wbs-detail-client";
+import { formatJalali, formatJalaliLong, formatJalaliDateTime } from "@/lib/jalali";
 
 export const dynamic = "force-dynamic";
+
+const strategicTopicMap: Record<string, string> = {
+  "1.1": "1.1 - حکمرانی دارایی‌محور",
+  "1.2": "1.2 - دارایی‌های داخلی",
+  "1.3": "1.3 - دارایی‌های بیرونی",
+  "1.4": "1.4 - دارایی‌های دانشی",
+  "1.5": "1.5 - پایداری مالی",
+};
+
+const wbsStatusMap: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
+  pending: { label: "در انتظار", variant: "secondary" },
+  in_progress: { label: "در حال انجام", variant: "default" },
+  completed: { label: "تکمیل شده", variant: "outline" },
+  on_hold: { label: "متوقف", variant: "secondary" },
+};
 
 export default async function WBSDetailPage({
   params,
@@ -39,6 +54,10 @@ export default async function WBSDetailPage({
       assets: true,
       kpis: true,
       risks: true,
+      statusUpdates: {
+        include: { personel: true },
+        orderBy: { createdAt: "desc" },
+      },
     },
   });
 
@@ -47,6 +66,7 @@ export default async function WBSDetailPage({
   const progressPlanPct = Math.round(wbs.progressPlan * 100);
   const progressActualPct = Math.round(wbs.progressActual * 100);
   const variance = progressActualPct - progressPlanPct;
+  const statusInfo = wbsStatusMap[wbs.status] || { label: wbs.status, variant: "secondary" as const };
 
   return (
     <div>
@@ -68,6 +88,12 @@ export default async function WBSDetailPage({
                 <div className="flex items-center gap-2 mb-2">
                   <Badge variant="outline" className="font-mono">{wbs.wbsCode}</Badge>
                   <Badge variant="secondary">سطح {wbs.level.toLocaleString("fa-IR")}</Badge>
+                  <Badge variant={statusInfo.variant}>{statusInfo.label}</Badge>
+                  {wbs.strategicTopic && (
+                    <Badge variant="default" className="text-xs">
+                      {strategicTopicMap[wbs.strategicTopic] || wbs.strategicTopic}
+                    </Badge>
+                  )}
                   {wbs.parent && (
                     <Link href={`/wbs/${wbs.parent.id}`} className="text-xs text-muted-foreground hover:text-foreground">
                       والد: {wbs.parent.wbsCode} - {wbs.parent.title}
@@ -324,7 +350,85 @@ export default async function WBSDetailPage({
             </CardContent>
           </Card>
         )}
+
+        {/* Status update section */}
+        <WBSStatusUpdateSection wbsId={wbs.id} currentStatus={wbs.status} currentProgressPct={progressActualPct} statusUpdates={wbs.statusUpdates} />
       </div>
     </div>
+  );
+}
+
+// ============================================================
+// Status update section (server-fetched history + client form)
+// ============================================================
+function WBSStatusUpdateSection({
+  wbsId,
+  currentStatus,
+  currentProgressPct,
+  statusUpdates,
+}: {
+  wbsId: string;
+  currentStatus: string;
+  currentProgressPct: number;
+  statusUpdates: any[];
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base flex items-center gap-2">
+          <RefreshCw className="w-4 h-4" />
+          بروزرسانی وضعیت فعالیت
+        </CardTitle>
+        <p className="text-xs text-muted-foreground">
+          کاربران تخصیص‌یافته می‌توانند وضعیت، درصد پیشرفت و یادداشت ثبت کنند
+        </p>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <WBSStatusUpdateForm
+          wbsId={wbsId}
+          currentStatus={currentStatus}
+          currentProgressPct={currentProgressPct}
+        />
+
+        <div>
+          <h4 className="text-sm font-medium mb-2">
+            تاریخچه بروزرسانی‌ها ({statusUpdates.length.toLocaleString("fa-IR")})
+          </h4>
+          {statusUpdates.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-4">
+              هنوز بروزرسانی ثبت نشده است
+            </p>
+          ) : (
+            <div className="space-y-3 max-h-96 overflow-y-auto">
+              {statusUpdates.map((su: any) => (
+                <div key={su.id} className="border-r-2 border-muted pr-3 pb-3">
+                  <div className="flex items-center gap-2 flex-wrap text-xs">
+                    <Badge variant="outline">{su.previousStatus || "-"}</Badge>
+                    <ArrowRight className="w-3 h-3" />
+                    <Badge variant="default">{su.newStatus}</Badge>
+                    {su.progressPct != null && (
+                      <Badge variant="secondary" className="font-num">
+                        پیشرفت: {Math.round(su.progressPct).toLocaleString("fa-IR")}%
+                      </Badge>
+                    )}
+                    <span className="text-muted-foreground mr-auto">
+                      {formatJalaliDateTime(su.createdAt)}
+                    </span>
+                  </div>
+                  {su.personel && (
+                    <p className="text-xs text-muted-foreground mt-1">
+                      توسط: {su.personel.name}
+                    </p>
+                  )}
+                  {su.notes && (
+                    <p className="text-sm mt-1">{su.notes}</p>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </CardContent>
+    </Card>
   );
 }

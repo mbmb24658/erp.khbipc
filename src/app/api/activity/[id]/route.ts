@@ -116,6 +116,7 @@ export async function PUT(
         progressPct: data.progressPct ?? existing.progressPct,
         hrPlan: data.hrPlan === undefined ? existing.hrPlan : (data.hrPlan || null),
         hrActual: finalHrActual,
+        strategicTopic: data.strategicTopic === undefined ? existing.strategicTopic : (data.strategicTopic || null),
         notes: data.notes === undefined ? existing.notes : data.notes || null,
       },
     });

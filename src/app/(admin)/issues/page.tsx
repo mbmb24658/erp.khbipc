@@ -34,6 +34,11 @@ import * as XLSX from "xlsx";
 import {
   ScatterChart,
   Scatter,
+  LineChart,
+  Line,
+  BarChart,
+  Bar,
+  Cell,
   XAxis,
   YAxis,
   ZAxis,
@@ -43,6 +48,12 @@ import {
   ResponsiveContainer,
   ReferenceLine,
 } from "recharts";
+import { formatJalali, formatJalaliLong } from "@/lib/jalali";
+import {
+  strategicTopicColors,
+  strategicTopicOrder,
+  getTopicColor,
+} from "@/lib/topic-colors";
 
 interface Issue {
   id: string;
@@ -62,6 +73,15 @@ interface Issue {
   personnelInPositions: number;
   usersFound: number;
   hrPlanCount: number;
+  strategicTopic: string | null;
+}
+
+interface IssuesChart {
+  daily30: { date: string; [user: string]: number | string }[];
+  dailyAll: { date: string; [user: string]: number | string }[];
+  impactByTopic: { label: string; value: number; count: number }[];
+  impactByMainCategory: { label: string; value: number; count: number }[];
+  solutionTrend: { date: string; [topic: string]: number | string }[];
 }
 
 const urgencyBadgeVariant: Record<
@@ -95,12 +115,30 @@ function toPersianDigits(s: string | number): string {
   return String(s).replace(/\d/g, (d) => persianDigits[parseInt(d)]);
 }
 
+// Generate a stable color per user from a small palette
+const USER_LINE_COLORS = [
+  "#e11d48",
+  "#d97706",
+  "#059669",
+  "#7c3aed",
+  "#0284c7",
+  "#db2777",
+  "#65a30d",
+  "#9333ea",
+  "#0891b2",
+  "#ea580c",
+];
+function colorForIndex(idx: number): string {
+  return USER_LINE_COLORS[idx % USER_LINE_COLORS.length];
+}
+
 type SortKey = "issueScore" | "importance" | "feasibility" | "weightPct";
 type TypeFilter = "all" | "PMS" | "جاری";
 type CriticalityFilter = "all" | "critical" | "moderate" | "low";
 
 export default function IssuesPage() {
   const [data, setData] = useState<Issue[]>([]);
+  const [charts, setCharts] = useState<IssuesChart | null>(null);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
@@ -114,10 +152,18 @@ export default function IssuesPage() {
     (async () => {
       setLoading(true);
       try {
-        const res = await fetch("/api/issues");
+        const res = await fetch("/api/issues?charts=true");
         if (!res.ok) throw new Error("خطا در بارگذاری اطلاعات");
         const json = await res.json();
-        if (mounted) setData(Array.isArray(json) ? json : []);
+        if (mounted) {
+          // New format: { issues, charts }. Old format: array of issues.
+          if (Array.isArray(json)) {
+            setData(json);
+          } else {
+            setData(Array.isArray(json.issues) ? json.issues : []);
+            setCharts(json.charts || null);
+          }
+        }
       } catch (e: any) {
         notifyError(e.message || "خطا در بارگذاری اطلاعات");
       } finally {
@@ -210,6 +256,50 @@ export default function IssuesPage() {
     return result;
   }, [data, typeFilter, criticalityFilter, search, sortBy]);
 
+  // ----- Chart helpers -----
+  // Collect unique user names from chart line data
+  const daily30Users = useMemo(() => {
+    if (!charts?.daily30) return [];
+    const set = new Set<string>();
+    for (const row of charts.daily30) {
+      for (const key of Object.keys(row)) {
+        if (key !== "date") set.add(key);
+      }
+    }
+    return Array.from(set);
+  }, [charts]);
+
+  const dailyAllUsers = useMemo(() => {
+    if (!charts?.dailyAll) return [];
+    const set = new Set<string>();
+    for (const row of charts.dailyAll) {
+      for (const key of Object.keys(row)) {
+        if (key !== "date") set.add(key);
+      }
+    }
+    return Array.from(set);
+  }, [charts]);
+
+  // Solution trend: sort topics by strategicTopicOrder, fall back to others
+  const solutionTrendTopics = useMemo(() => {
+    if (!charts?.solutionTrend) return [];
+    const set = new Set<string>();
+    for (const row of charts.solutionTrend) {
+      for (const key of Object.keys(row)) {
+        if (key !== "date") set.add(key);
+      }
+    }
+    const arr = Array.from(set);
+    return arr.sort((a, b) => {
+      const ia = strategicTopicOrder.indexOf(a);
+      const ib = strategicTopicOrder.indexOf(b);
+      if (ia !== -1 && ib !== -1) return ia - ib;
+      if (ia !== -1) return -1;
+      if (ib !== -1) return 1;
+      return a.localeCompare(b);
+    });
+  }, [charts]);
+
   // ----- Export to Excel -----
   const handleExport = async () => {
     if (filteredData.length === 0) {
@@ -235,6 +325,7 @@ export default function IssuesPage() {
         "کاربران سیستم": i.usersFound,
         "تعداد سمت‌های مورد نیاز": i.hrPlanCount,
         "پیشرفت واقعی (%)": Math.round(i.progressActual * 1000) / 10,
+        "موضوع استراتژیک": i.strategicTopic || "",
         "راهکار پیشنهادی": i.recommendation,
       }));
 
@@ -256,6 +347,7 @@ export default function IssuesPage() {
         { wch: 14 },
         { wch: 20 },
         { wch: 16 },
+        { wch: 14 },
         { wch: 70 },
       ];
 
@@ -454,6 +546,289 @@ export default function IssuesPage() {
         </CardContent>
       </Card>
 
+      {/* ===== New charts: delay cause analytics ===== */}
+
+      {/* Daily issue count by user — last 30 days */}
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle className="text-base">
+            تعداد روزانه مسائل به تفکیک کاربر (۳۰ روز اخیر)
+          </CardTitle>
+          <p className="text-xs text-muted-foreground">
+            هر خط نشان‌دهنده یک کاربر است. محور افقی: تاریخ — محور عمودی: تعداد مسائل تجمعی
+          </p>
+        </CardHeader>
+        <CardContent>
+          {!charts || charts.daily30.length === 0 ? (
+            <div className="text-center py-12 text-muted-foreground">
+              داده‌ای موجود نیست
+            </div>
+          ) : (
+            <div className="w-full h-[320px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={charts.daily30} margin={{ right: 16, left: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis
+                    dataKey="date"
+                    tick={{ fontSize: 10 }}
+                    tickFormatter={(v) => formatJalali(new Date(v))}
+                    minTickGap={20}
+                  />
+                  <YAxis
+                    tick={{ fontSize: 11 }}
+                    allowDecimals={false}
+                    tickFormatter={(v) => toPersianDigits(v)}
+                  />
+                  <Tooltip
+                    labelFormatter={(v) => formatJalaliLong(new Date(v as string))}
+                    formatter={(value: number, name: string) => [
+                      toPersianDigits(value),
+                      name,
+                    ]}
+                  />
+                  <Legend wrapperStyle={{ fontSize: 11 }} />
+                  {daily30Users.map((u, idx) => (
+                    <Line
+                      key={u}
+                      type="monotone"
+                      dataKey={u}
+                      stroke={colorForIndex(idx)}
+                      strokeWidth={2}
+                      dot={false}
+                      connectNulls
+                    />
+                  ))}
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Daily issue count by user — all time */}
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle className="text-base">
+            تعداد روزانه مسائل به تفکیک کاربر (کل بازه زمانی)
+          </CardTitle>
+          <p className="text-xs text-muted-foreground">
+            از تاریخ اولین مسئله شناسایی‌شده تا کنون
+          </p>
+        </CardHeader>
+        <CardContent>
+          {!charts || charts.dailyAll.length === 0 ? (
+            <div className="text-center py-12 text-muted-foreground">
+              داده‌ای موجود نیست
+            </div>
+          ) : (
+            <div className="w-full h-[320px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={charts.dailyAll} margin={{ right: 16, left: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis
+                    dataKey="date"
+                    tick={{ fontSize: 10 }}
+                    tickFormatter={(v) => formatJalali(new Date(v))}
+                    minTickGap={20}
+                  />
+                  <YAxis
+                    tick={{ fontSize: 11 }}
+                    allowDecimals={false}
+                    tickFormatter={(v) => toPersianDigits(v)}
+                  />
+                  <Tooltip
+                    labelFormatter={(v) => formatJalaliLong(new Date(v as string))}
+                    formatter={(value: number, name: string) => [
+                      toPersianDigits(value),
+                      name,
+                    ]}
+                  />
+                  <Legend wrapperStyle={{ fontSize: 11 }} />
+                  {dailyAllUsers.map((u, idx) => (
+                    <Line
+                      key={u}
+                      type="monotone"
+                      dataKey={u}
+                      stroke={colorForIndex(idx)}
+                      strokeWidth={2}
+                      dot={false}
+                      connectNulls
+                    />
+                  ))}
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Average delay impact by strategic topic */}
+      <div className="grid gap-4 lg:grid-cols-2 mb-6">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">
+              میانگین تأثیر تأخیر بر اساس موضوع استراتژیک
+            </CardTitle>
+            <p className="text-xs text-muted-foreground">
+              محور افقی: موضوع استراتژیک — محور عمودی: میانگین درصد تأثیر (۰ تا ۱۰۰)
+            </p>
+          </CardHeader>
+          <CardContent>
+            {!charts || charts.impactByTopic.length === 0 ? (
+              <div className="text-center py-12 text-muted-foreground">
+                داده‌ای موجود نیست
+              </div>
+            ) : (
+              <div className="w-full h-[300px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={charts.impactByTopic} margin={{ right: 16, left: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis
+                      dataKey="label"
+                      tick={{ fontSize: 11 }}
+                      tickFormatter={(v) => toPersianDigits(v)}
+                    />
+                    <YAxis
+                      tick={{ fontSize: 11 }}
+                      domain={[0, 100]}
+                      tickFormatter={(v) => toPersianDigits(v)}
+                    />
+                    <Tooltip
+                      formatter={(value: number) => [
+                        `${toPersianDigits(value)}٪`,
+                        "میانگین تأثیر",
+                      ]}
+                    />
+                    <Bar dataKey="value" radius={[4, 4, 0, 0]}>
+                      {charts.impactByTopic.map((entry, index) => {
+                        const color =
+                          strategicTopicColors[entry.label]?.chart ||
+                          colorForIndex(index);
+                        return <Cell key={`bar-topic-${index}`} fill={color} />;
+                      })}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Average delay impact by main category */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">
+              میانگین تأثیر تأخیر بر اساس دسته اصلی علت
+            </CardTitle>
+            <p className="text-xs text-muted-foreground">
+              محور افقی: دسته اصلی DelayCause — محور عمودی: میانگین درصد تأثیر (۰ تا ۱۰۰)
+            </p>
+          </CardHeader>
+          <CardContent>
+            {!charts || charts.impactByMainCategory.length === 0 ? (
+              <div className="text-center py-12 text-muted-foreground">
+                داده‌ای موجود نیست
+              </div>
+            ) : (
+              <div className="w-full h-[300px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart
+                    data={charts.impactByMainCategory}
+                    layout="vertical"
+                    margin={{ right: 16, left: 80 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                    <XAxis
+                      type="number"
+                      domain={[0, 100]}
+                      tick={{ fontSize: 11 }}
+                      tickFormatter={(v) => toPersianDigits(v)}
+                    />
+                    <YAxis
+                      type="category"
+                      dataKey="label"
+                      width={120}
+                      tick={{ fontSize: 10 }}
+                    />
+                    <Tooltip
+                      formatter={(value: number) => [
+                        `${toPersianDigits(value)}٪`,
+                        "میانگین تأثیر",
+                      ]}
+                    />
+                    <Bar dataKey="value" radius={[0, 4, 4, 0]}>
+                      {charts.impactByMainCategory.map((entry, index) => (
+                        <Cell
+                          key={`bar-cat-${index}`}
+                          fill={colorForIndex(index)}
+                        />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Solution implementation progress trend by strategic topic */}
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle className="text-base">
+            روند پیشرفت اجرای راهکارها به تفکیک موضوع استراتژیک
+          </CardTitle>
+          <p className="text-xs text-muted-foreground">
+            روند میانگین درصد پیشرفت فعالیت‌های اصلاحی (۹۰ روز اخیر)
+          </p>
+        </CardHeader>
+        <CardContent>
+          {!charts || charts.solutionTrend.length === 0 ? (
+            <div className="text-center py-12 text-muted-foreground">
+              داده‌ای موجود نیست
+            </div>
+          ) : (
+            <div className="w-full h-[320px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={charts.solutionTrend} margin={{ right: 16, left: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis
+                    dataKey="date"
+                    tick={{ fontSize: 10 }}
+                    tickFormatter={(v) => formatJalali(new Date(v))}
+                    minTickGap={20}
+                  />
+                  <YAxis
+                    tick={{ fontSize: 11 }}
+                    domain={[0, 100]}
+                    tickFormatter={(v) => toPersianDigits(v)}
+                  />
+                  <Tooltip
+                    labelFormatter={(v) => formatJalaliLong(new Date(v as string))}
+                    formatter={(value: number, name: string) => [
+                      `${toPersianDigits(value)}٪`,
+                      name,
+                    ]}
+                  />
+                  <Legend wrapperStyle={{ fontSize: 11 }} />
+                  {solutionTrendTopics.map((t) => (
+                    <Line
+                      key={t}
+                      type="monotone"
+                      dataKey={t}
+                      stroke={getTopicColor(t).chart}
+                      strokeWidth={2}
+                      dot={false}
+                      connectNulls
+                    />
+                  ))}
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
       {/* Filters */}
       <div className="flex items-center gap-3 mb-4 flex-wrap">
         <div className="relative flex-1 min-w-[200px] max-w-xs">
@@ -533,6 +908,7 @@ export default function IssuesPage() {
                   <TableRow>
                     <TableHead className="min-w-[200px]">عنوان فعالیت</TableHead>
                     <TableHead>نوع</TableHead>
+                    <TableHead>موضوع</TableHead>
                     <TableHead>فوریت</TableHead>
                     <TableHead>اولویت</TableHead>
                     <TableHead>اهمیت</TableHead>
@@ -546,6 +922,7 @@ export default function IssuesPage() {
                   {filteredData.map((i) => {
                     const uBadge = urgencyBadgeVariant[i.urgency] || "outline";
                     const crit = criticalityMap[i.criticality];
+                    const topicColor = getTopicColor(i.strategicTopic);
                     return (
                       <TableRow key={`${i.type}-${i.id}`}>
                         <TableCell>
@@ -565,6 +942,17 @@ export default function IssuesPage() {
                           >
                             {i.type}
                           </Badge>
+                        </TableCell>
+                        <TableCell>
+                          {i.strategicTopic ? (
+                            <span
+                              className={`inline-block px-2 py-0.5 rounded text-[10px] font-num border ${topicColor.bg} ${topicColor.text} ${topicColor.border}`}
+                            >
+                              {toPersianDigits(i.strategicTopic)}
+                            </span>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">—</span>
+                          )}
                         </TableCell>
                         <TableCell>
                           <Badge variant={uBadge}>{i.urgencyLabel}</Badge>
@@ -646,11 +1034,22 @@ export default function IssuesPage() {
               <strong>بحرانی</strong>: اهمیت ≥ ۱۲ و امکان‌پذیری &lt; ۰.۳. این
               مسائل نیازمند مداخله فوری هستند.
             </li>
-            <li className="flex items-center gap-2 mt-2">
+            <li className="flex items-center gap-2 mt-2 flex-wrap">
               <span className="inline-block w-3 h-3 rounded-full bg-emerald-500"></span>
               PMS (ساختار شکست کار)
               <span className="inline-block w-3 h-3 rounded-full bg-amber-500 mr-3"></span>
               فعالیت‌های جاری
+            </li>
+            <li className="flex items-center gap-2 flex-wrap mt-2">
+              <span>رنگ‌بندی موضوعات:</span>
+              {strategicTopicOrder.map((t) => (
+                <span
+                  key={t}
+                  className={`inline-block px-2 py-0.5 rounded text-[10px] font-num border ${getTopicColor(t).bg} ${getTopicColor(t).text} ${getTopicColor(t).border}`}
+                >
+                  {toPersianDigits(t)}
+                </span>
+              ))}
             </li>
           </ul>
         </CardContent>

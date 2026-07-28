@@ -40,6 +40,12 @@ import {
   Target,
 } from "lucide-react";
 import { formatJalali, formatJalaliLong } from "@/lib/jalali";
+import {
+  strategicTopicColors,
+  strategicTopicOrder,
+  getTopicColor,
+} from "@/lib/topic-colors";
+import { SCurveChart } from "@/components/s-curve-chart";
 
 // ============================================================
 // Types (mirror of API response)
@@ -82,6 +88,28 @@ interface ReportResponse {
   trackingTrend: Record<string, number | string>[];
   creationTrend: { date: string; count: number }[];
   onlineTrend: { date: string; count: number }[];
+}
+
+// Vision data: full-timeline S-curves for root WBS + each strategic topic
+interface VisionMonthly {
+  monthDate: string;
+  plannedPct: number;
+  actualPct: number | null;
+}
+interface VisionWBS {
+  id: string;
+  wbsCode: string;
+  title: string;
+  strategicTopic: string | null;
+  progressPlan: number;
+  progressActual: number;
+  startDate: string | null;
+  finishDate: string | null;
+  monthlyProgress: VisionMonthly[];
+}
+interface VisionData {
+  root: VisionWBS | null;
+  topics: VisionWBS[];
 }
 
 // ============================================================
@@ -145,6 +173,7 @@ export default function ReportsPage() {
   const [fromDate, setFromDate] = useState(toInputDate(defaultFrom));
   const [toDate, setToDate] = useState(toInputDate(defaultTo));
   const [data, setData] = useState<ReportResponse | null>(null);
+  const [vision, setVision] = useState<VisionData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -160,7 +189,7 @@ export default function ReportsPage() {
     return `${formatJalaliLong(f)} تا ${formatJalaliLong(t)}`;
   }, [fromDate, toDate]);
 
-  // Fetch report data
+  // Fetch report data (with vision)
   const fetchData = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -168,14 +197,15 @@ export default function ReportsPage() {
       const from = inputToISO(fromDate, false);
       const to = inputToISO(toDate, true);
       const res = await fetch(
-        `/api/reports?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`
+        `/api/reports?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&vision=true`
       );
       if (!res.ok) {
         const j = await res.json().catch(() => ({}));
         throw new Error(j.error || "خطا در بارگذاری گزارش");
       }
-      const json = (await res.json()) as ReportResponse;
+      const json = (await res.json()) as ReportResponse & { vision?: VisionData };
       setData(json);
+      if (json.vision) setVision(json.vision);
     } catch (e: any) {
       setError(e.message || "خطا در بارگذاری گزارش");
     } finally {
@@ -368,12 +398,180 @@ export default function ReportsPage() {
             </CardContent>
           </Card>
 
+          {/* ===== Vision section: full-timeline S-curves ===== */}
+          {vision && (
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <TrendingUp className="w-4 h-4 text-emerald-600" />
+                  چشم‌انداز سازمان
+                </CardTitle>
+                <p className="text-xs text-muted-foreground">
+                  منحنی‌های S پیشرفت برنامه‌ای و واقعی در کل بازه زمانی پروژه
+                </p>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                {/* Root WBS (level 1) */}
+                {vision.root && (
+                  <div className="border rounded-lg p-4 space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <Badge variant="outline" className="font-mono shrink-0">
+                          {vision.root.wbsCode}
+                        </Badge>
+                        <h3 className="text-sm font-semibold truncate">
+                          {vision.root.title}
+                        </h3>
+                      </div>
+                      <div className="flex items-center gap-3 text-xs">
+                        <span className="text-muted-foreground">
+                          برنامه:{" "}
+                          <span className="font-num font-bold text-blue-600">
+                            {vision.root.progressPlan.toLocaleString("fa-IR")}٪
+                          </span>
+                        </span>
+                        <span className="text-muted-foreground">
+                          واقعی:{" "}
+                          <span className="font-num font-bold text-emerald-600">
+                            {vision.root.progressActual.toLocaleString("fa-IR")}٪
+                          </span>
+                        </span>
+                      </div>
+                    </div>
+                    <div className="h-[260px]">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart
+                          data={[
+                            { idx: 0, plan: 0, actual: 0 },
+                            ...vision.root.monthlyProgress.map((m) => ({
+                              idx: m.plannedPct,
+                              plan: Math.round((m.plannedPct ?? 0) * 1000) / 10,
+                              actual:
+                                m.actualPct != null
+                                  ? Math.round(m.actualPct * 1000) / 10
+                                  : null,
+                            })),
+                          ]}
+                          margin={{ right: 16, left: 0 }}
+                        >
+                          <CartesianGrid strokeDasharray="3 3" />
+                          <XAxis
+                            dataKey="idx"
+                            hide
+                          />
+                          <YAxis
+                            domain={[0, 100]}
+                            tick={{ fontSize: 11 }}
+                            tickFormatter={(v) => Number(v).toLocaleString("fa-IR")}
+                          />
+                          <RTooltip
+                            formatter={(value: number, name: string) => [
+                              `${Number(value).toLocaleString("fa-IR")}٪`,
+                              name === "plan" ? "برنامه‌ای" : "واقعی",
+                            ]}
+                          />
+                          <Legend
+                            formatter={(v) =>
+                              v === "plan" ? "برنامه‌ای" : "واقعی"
+                            }
+                          />
+                          <Line
+                            type="monotone"
+                            dataKey="plan"
+                            stroke="#3b82f6"
+                            strokeWidth={2}
+                            dot={false}
+                            connectNulls
+                          />
+                          <Line
+                            type="monotone"
+                            dataKey="actual"
+                            stroke="#10b981"
+                            strokeWidth={2}
+                            dot={false}
+                            connectNulls
+                          />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+                )}
+
+                {/* Strategic topics (level 2) */}
+                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                  {vision.topics.map((w) => {
+                    const tc = getTopicColor(w.strategicTopic);
+                    const deviation = w.progressActual - w.progressPlan;
+                    return (
+                      <div
+                        key={w.id}
+                        className={`border rounded-lg p-3 space-y-2 ${tc.bg} ${tc.border}`}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="min-w-0 flex-1">
+                            <Badge
+                              variant="outline"
+                              className={`font-mono text-[10px] shrink-0 ${tc.text}`}
+                            >
+                              {w.wbsCode}
+                            </Badge>
+                            <p className="text-xs font-medium truncate mt-1">
+                              {w.title}
+                            </p>
+                          </div>
+                          <Badge
+                            variant={deviation >= 0 ? "default" : "destructive"}
+                            className="font-num text-[10px] shrink-0"
+                          >
+                            {deviation >= 0 ? "+" : ""}
+                            {deviation.toLocaleString("fa-IR")}٪
+                          </Badge>
+                        </div>
+                        <div className="h-20 min-h-20">
+                          <SCurveChart
+                            data={w.monthlyProgress.map((m) => ({
+                              monthDate: m.monthDate,
+                              plannedPct: m.plannedPct,
+                              actualPct: m.actualPct,
+                            }))}
+                            overallActual={(w.progressActual ?? 0) / 100}
+                          />
+                        </div>
+                        <div className="flex justify-between text-[11px]">
+                          <span className="text-muted-foreground">
+                            برنامه:{" "}
+                            <span className="font-num font-bold text-blue-600">
+                              {w.progressPlan.toLocaleString("fa-IR")}٪
+                            </span>
+                          </span>
+                          <span className="text-muted-foreground">
+                            واقعی:{" "}
+                            <span className="font-num font-bold text-emerald-600">
+                              {w.progressActual.toLocaleString("fa-IR")}٪
+                            </span>
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
           {/* Strategic topic dividers */}
           {data.topics.map((t) => (
-            <Card key={t.topic}>
+            <Card
+              key={t.topic}
+              className={`${getTopicColor(t.topic).border}`}
+            >
               <CardHeader className="pb-3">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div className="flex items-center gap-2">
+                    <span
+                      className={`inline-block w-3 h-3 rounded-full ${getTopicColor(t.topic).bg}`}
+                      style={{ backgroundColor: getTopicColor(t.topic).chart }}
+                    />
                     <CardTitle className="text-base">{t.label}</CardTitle>
                   </div>
                   <div className="flex items-center gap-3">

@@ -23,6 +23,18 @@ export async function GET(
 }
 
 // POST: Create a status update for a WBS item
+// Body: {
+//   newStatus: string,
+//   progressPct?: number,         // 0-100
+//   notes?: string,
+//   delayCauseIds?: string[],     // array of DelayCause IDs (when delayed)
+// }
+//
+// Side effects:
+// - Saves the status update with delayCauseIds as a JSON string
+// - Updates the WBS status + progressActual
+// - For each delayCauseId, creates a corrective activity (isCorrective=true)
+//   linked to a new Activity; if the delay cause has a warning, sends a notification.
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -48,6 +60,16 @@ export async function POST(
       if (user?.personelId) personelId = user.personelId;
     }
 
+    // Normalize delayCauseIds (must be array of strings)
+    let delayCauseIds: string[] = [];
+    if (Array.isArray(data.delayCauseIds)) {
+      delayCauseIds = data.delayCauseIds.filter(
+        (x: any) => typeof x === "string" && x.length > 0
+      );
+    }
+    const delayCauseIdsJson =
+      delayCauseIds.length > 0 ? JSON.stringify(delayCauseIds) : null;
+
     const update = await db.wBSStatusUpdate.create({
       data: {
         wbsId: id,
@@ -55,6 +77,7 @@ export async function POST(
         previousStatus: wbs.status,
         newStatus: data.newStatus,
         progressPct: data.progressPct !== undefined ? Number(data.progressPct) : null,
+        delayCauseIds: delayCauseIdsJson,
         notes: data.notes || null,
       },
     });
@@ -74,15 +97,155 @@ export async function POST(
       },
     });
 
+    // ----- Auto-create corrective activities for each delay cause -----
+    const createdActivities: any[] = [];
+    if (delayCauseIds.length > 0) {
+      const causes = await db.delayCause.findMany({
+        where: { id: { in: delayCauseIds } },
+      });
+
+      for (const cause of causes) {
+        // Auto-generate code: ACT-001, ACT-002, ...
+        const lastActivity = await db.activity.findFirst({
+          orderBy: { code: "desc" },
+          select: { code: true },
+        });
+        let newCode = "ACT-001";
+        if (lastActivity?.code) {
+          const match = lastActivity.code.match(/ACT-(\d+)/);
+          if (match) {
+            const nextNum = parseInt(match[1]) + 1;
+            newCode = `ACT-${String(nextNum).padStart(3, "0")}`;
+          }
+        }
+
+        // Compute urgency from impactPercent
+        const impact = cause.impactPercent ?? 0;
+        let urgency = "normal";
+        if (impact > 0.8) urgency = "urgent";
+        else if (impact > 0.5) urgency = "high";
+        const priority = Math.max(1, Math.min(5, Math.round(impact * 5)));
+
+        // Compute end date
+        const startDate = new Date();
+        const endDate = new Date(startDate);
+        const unit = (cause.unit || "روز").trim();
+        const dur = cause.durationDays ?? 0;
+        switch (unit) {
+          case "فوری":
+            endDate.setDate(endDate.getDate() + 1);
+            break;
+          case "مستمر":
+            endDate.setDate(endDate.getDate() + 365);
+            break;
+          case "هفته":
+            endDate.setDate(endDate.getDate() + dur * 7);
+            break;
+          case "ماه":
+            endDate.setDate(endDate.getDate() + dur * 30);
+            break;
+          case "روز":
+          default:
+            endDate.setDate(endDate.getDate() + (dur || 1));
+            break;
+        }
+
+        const title = `فعالیت اصلاحی: ${cause.solution}`;
+        const description = `راهکار برای «${cause.rootCause}» - ${cause.solution}\nفعالیت مرجع (WBS): ${wbs.wbsCode} - ${wbs.title}`;
+
+        const activity = await db.activity.create({
+          data: {
+            code: newCode,
+            title,
+            description,
+            assetId: null,
+            wbsId: wbs.id,
+            startDate,
+            endDate,
+            durationDays: Math.max(
+              1,
+              Math.round(
+                (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)
+              )
+            ),
+            urgency,
+            priority,
+            status: "pending",
+            progressPct: 0,
+            hrPlan: wbs.hrPlan || null,
+            hrActual: wbs.hrActual || null,
+            isCorrective: true,
+            parentActivityId: wbs.id, // WBS id as parent reference
+            delayCauseId: cause.id,
+            strategicTopic: wbs.strategicTopic || null,
+            notes: cause.warning || null,
+            createdById: userId,
+          },
+        });
+
+        // Sync ActivityPerson from hrActual
+        let hrActualIds: string[] = [];
+        try {
+          const parsed = wbs.hrActual ? JSON.parse(wbs.hrActual) : [];
+          if (Array.isArray(parsed)) hrActualIds = parsed;
+        } catch {
+          // ignore
+        }
+        for (const pid of hrActualIds) {
+          try {
+            await db.activityPerson.create({
+              data: { activityId: activity.id, personelId: pid, role: "مسئول اصلاحی" },
+            });
+          } catch {
+            // Skip duplicates / invalid personelId
+          }
+        }
+
+        // Send warning notification to all responsible users
+        if (cause.warning) {
+          const personelIds = Array.from(new Set(hrActualIds));
+          const users = personelIds.length
+            ? await db.user.findMany({
+                where: { personelId: { in: personelIds } },
+                select: { id: true },
+              })
+            : [];
+          const notifTitle = `هشدار تأخیر: ${cause.mainCategory} - ${cause.subCategory}`;
+          const notifMessage = `${cause.warning}\nراهکار: ${cause.solution}\nفعالیت اصلاحی: ${activity.code}`;
+          for (const u of users) {
+            await db.notification.create({
+              data: {
+                userId: u.id,
+                title: notifTitle,
+                message: notifMessage,
+                category: "delay_cause",
+                priority: urgency,
+                actionUrl: `/activities/${activity.id}`,
+              },
+            });
+          }
+        }
+
+        createdActivities.push(activity);
+      }
+    }
+
     await db.userLog.create({
       data: {
         userId: (session.user as any).id,
         action: "wbs_status.update",
-        description: `بروزرسانی وضعیت فعالیت ${wbs.wbsCode} به ${data.newStatus}`,
+        description:
+          `بروزرسانی وضعیت فعالیت ${wbs.wbsCode} به ${data.newStatus}` +
+          (createdActivities.length > 0
+            ? ` — ${createdActivities.length} فعالیت اصلاحی ایجاد شد`
+            : ""),
       },
     });
 
-    return NextResponse.json(update, { status: 201 });
+    return NextResponse.json(
+      { update, correctiveActivities: createdActivities },
+      { status: 201 }
+    );
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 });
   }

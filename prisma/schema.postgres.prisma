@@ -760,9 +760,11 @@ model Activity {
   status          String   @default("pending") // pending | in_progress | completed | cancelled | on_hold
   progressPct     Float    @default(0)
   // HR resources (JSON-encoded arrays: hrPlan = OrgChart IDs, hrActual = Personel IDs)
-  hrPlan          String?  // JSON array of OrgChart IDs (سمت‌های سازمانی برنامه‌ریزی شده)
-  hrActual        String?  // JSON array of Personel IDs (پرسنل واقعی اختصاص یافته)
-  // Strategic topic selected by user: "1.1" | "1.2" | "1.3" | "1.4" | "1.5"
+  hrPlan          String?
+  hrActual        String?
+  isCorrective    Boolean  @default(false)
+  parentActivityId String?
+  delayCauseId    String?
   strategicTopic  String?
   // Tracking
   createdById     String?
@@ -811,6 +813,7 @@ model ActivityStatusUpdate {
   previousStatus  String?
   newStatus       String
   progressPct     Float?
+  delayCauseIds   String?
   notes           String?
   updatedAt       DateTime @default(now())
   createdAt       DateTime @default(now())
@@ -826,6 +829,21 @@ model WBSStatusUpdate {
   previousStatus  String?
   newStatus       String
   progressPct     Float?
+  delayCauseIds   String?
   notes           String?
   createdAt       DateTime @default(now())
+}
+
+model DelayCause {
+  id              String   @id @default(cuid())
+  mainCategory    String
+  subCategory     String
+  rootCause       String
+  solution        String
+  impactPercent   Float
+  durationDays    Int      @default(0)
+  unit            String
+  warning         String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 }

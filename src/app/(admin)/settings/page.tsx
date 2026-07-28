@@ -46,6 +46,7 @@ const ALL_MODULES: { path: string; label: string }[] = [
   { path: "/risks", label: "مدیریت ریسک" },
   { path: "/issues", label: "نظام مسائل" },
   { path: "/notifications", label: "اعلان‌ها" },
+  { path: "/reports", label: "گزارشات" },
 ];
 
 interface Role {

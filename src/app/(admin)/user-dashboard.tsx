@@ -41,6 +41,10 @@ import {
   Target,
 } from "lucide-react";
 import { formatJalali, formatJalaliDateTime } from "@/lib/jalali";
+import {
+  strategicTopicColors,
+  getTopicColor,
+} from "@/lib/topic-colors";
 
 // ============================================================
 // Types
@@ -464,8 +468,11 @@ function StrategicTopicSection({
     [timeFiltered, statusFilter, urgencyFilter, sortBy]
   );
 
+  // Topic color (only for the 5 strategic topics; "other" uses muted)
+  const topicColor = getTopicColor(topic === "other" ? null : topic);
+
   return (
-    <Card>
+    <Card className={topicColor.border}>
       <CardHeader className="pb-3">
         <button
           onClick={() => setExpanded(!expanded)}
@@ -477,8 +484,16 @@ function StrategicTopicSection({
             ) : (
               <ChevronLeft className="w-4 h-4 text-muted-foreground shrink-0" />
             )}
-            <CardTitle className="text-base">{topicLabel}</CardTitle>
-            <Badge variant="secondary" className="font-num text-xs">
+            <span
+              className="inline-block w-3 h-3 rounded-full shrink-0"
+              style={{ backgroundColor: topicColor.chart }}
+              aria-hidden
+            />
+            <CardTitle className={`text-base ${topicColor.text}`}>{topicLabel}</CardTitle>
+            <Badge
+              variant="secondary"
+              className={`font-num text-xs ${topicColor.bg} ${topicColor.text} ${topicColor.border} border`}
+            >
               {hrFilteredItems.length.toLocaleString("fa-IR")} فعالیت
             </Badge>
           </div>
@@ -633,6 +648,7 @@ export function UserDashboard({
       topic: t,
       label: strategicTopicMap[t].split(" - ")[1],
       count: hrFiltered.filter((a) => a.strategicTopic === t).length,
+      color: getTopicColor(t).chart,
     }));
   }, [hrFiltered]);
 
@@ -795,8 +811,11 @@ export function UserDashboard({
                     formatter={(value: number) => [value.toLocaleString("fa-IR"), "تعداد"]}
                   />
                   <Bar dataKey="count" radius={[0, 6, 6, 0]}>
-                    {topicChartData.map((_, index) => (
-                      <Cell key={`bar-${index}`} fill={BAR_COLORS[index % BAR_COLORS.length]} />
+                    {topicChartData.map((entry, index) => (
+                      <Cell
+                        key={`bar-${index}`}
+                        fill={entry.color || BAR_COLORS[index % BAR_COLORS.length]}
+                      />
                     ))}
                   </Bar>
                 </BarChart>

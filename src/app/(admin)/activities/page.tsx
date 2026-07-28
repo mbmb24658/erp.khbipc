@@ -46,6 +46,7 @@ import {
   ChevronDown,
 } from "lucide-react";
 import { formatJalali } from "@/lib/jalali";
+import { strategicTopicColors } from "@/lib/topic-colors";
 
 interface Personel {
   id: string;
@@ -680,7 +681,14 @@ export default function ActivitiesPage() {
                   </div>
                   {a.strategicTopic && (
                     <div>
-                      <Badge variant="secondary" className="text-[10px]">
+                      <Badge
+                        variant="secondary"
+                        className={`text-[10px] ${
+                          strategicTopicColors[a.strategicTopic]?.bg || ""
+                        } ${strategicTopicColors[a.strategicTopic]?.text || ""} ${
+                          strategicTopicColors[a.strategicTopic]?.border || ""
+                        } border`}
+                      >
                         {strategicTopicMap[a.strategicTopic] || a.strategicTopic}
                       </Badge>
                     </div>

@@ -507,5 +507,90 @@ export async function GET(req: NextRequest) {
     onlineTrend,
   };
 
+  // ------------------------------------------------------------------
+  // Optional: vision data (full-timeline S-curves for root + level-2 WBS)
+  // ------------------------------------------------------------------
+  if (searchParams.get("vision") === "true") {
+    const [rootWbs, level2Wbs] = await Promise.all([
+      db.wBS.findFirst({
+        where: { level: 1 },
+        orderBy: { wbsCode: "asc" },
+        include: { monthlyProgress: { orderBy: { monthDate: "asc" } } },
+      }),
+      db.wBS.findMany({
+        where: { level: 2 },
+        orderBy: { wbsCode: "asc" },
+        include: { monthlyProgress: { orderBy: { monthDate: "asc" } } },
+      }),
+    ]);
+
+    // Helper: compute plan % from monthly progress (latest non-null plannedPct),
+    // falling back to start/finish linear extrapolation.
+    function computePlanPct(w: {
+      progressPlan: number;
+      startDate: Date | null;
+      finishDate: Date | null;
+      monthlyProgress: { plannedPct: number }[];
+    }): number {
+      // 1) Use WBS.progressPlan if it's meaningfully set (> 0)
+      if (w.progressPlan && w.progressPlan > 0) {
+        return Math.round(w.progressPlan * 1000) / 10;
+      }
+      // 2) Use latest monthlyProgress.plannedPct
+      if (w.monthlyProgress.length > 0) {
+        const last = w.monthlyProgress[w.monthlyProgress.length - 1];
+        if (last && last.plannedPct) {
+          return Math.round(last.plannedPct * 1000) / 10;
+        }
+      }
+      // 3) Linear extrapolation from start/finish dates
+      if (w.startDate && w.finishDate) {
+        const now = new Date();
+        const total = w.finishDate.getTime() - w.startDate.getTime();
+        if (total > 0) {
+          const elapsed = now.getTime() - w.startDate.getTime();
+          return Math.min(100, Math.max(0, Math.round((elapsed / total) * 1000) / 10));
+        }
+      }
+      return 0;
+    }
+
+    const vision = {
+      root: rootWbs
+        ? {
+            id: rootWbs.id,
+            wbsCode: rootWbs.wbsCode,
+            title: rootWbs.title,
+            progressPlan: computePlanPct(rootWbs),
+            progressActual: Math.round((rootWbs.progressActual ?? 0) * 1000) / 10,
+            startDate: rootWbs.startDate?.toISOString() ?? null,
+            finishDate: rootWbs.finishDate?.toISOString() ?? null,
+            monthlyProgress: rootWbs.monthlyProgress.map((m) => ({
+              monthDate: m.monthDate.toISOString(),
+              plannedPct: m.plannedPct,
+              actualPct: m.actualPct,
+            })),
+          }
+        : null,
+      topics: level2Wbs.map((w) => ({
+        id: w.id,
+        wbsCode: w.wbsCode,
+        title: w.title,
+        strategicTopic: w.strategicTopic || null,
+        progressPlan: computePlanPct(w),
+        progressActual: Math.round((w.progressActual ?? 0) * 1000) / 10,
+        startDate: w.startDate?.toISOString() ?? null,
+        finishDate: w.finishDate?.toISOString() ?? null,
+        monthlyProgress: w.monthlyProgress.map((m) => ({
+          monthDate: m.monthDate.toISOString(),
+          plannedPct: m.plannedPct,
+          actualPct: m.actualPct,
+        })),
+      })),
+    };
+
+    return NextResponse.json({ ...response, vision });
+  }
+
   return NextResponse.json(response);
 }

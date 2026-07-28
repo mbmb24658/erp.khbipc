@@ -105,9 +105,25 @@ async function AdminDashboard() {
   const overallProgress = wbsRoot?.progressActual
     ? Math.round(wbsRoot.progressActual * 100)
     : 0;
-  const overallPlan = wbsRoot?.progressPlan
-    ? Math.round(wbsRoot.progressPlan * 100)
-    : 0;
+  // Compute overall plan from multiple sources to avoid showing equal plan/actual
+  // when progressPlan is unset or zero.
+  let overallPlan = 0;
+  if (wbsRoot?.progressPlan && wbsRoot.progressPlan > 0) {
+    overallPlan = Math.round(wbsRoot.progressPlan * 100);
+  } else if (rootMonthlyProgress.length > 0) {
+    const last = rootMonthlyProgress[rootMonthlyProgress.length - 1];
+    if (last && last.plannedPct) {
+      overallPlan = Math.round(last.plannedPct * 100);
+    }
+  }
+  if (overallPlan === 0 && wbsRoot?.startDate && wbsRoot?.finishDate) {
+    const now = new Date();
+    const total = wbsRoot.finishDate.getTime() - wbsRoot.startDate.getTime();
+    if (total > 0) {
+      const elapsed = now.getTime() - wbsRoot.startDate.getTime();
+      overallPlan = Math.min(100, Math.max(0, Math.round((elapsed / total) * 100)));
+    }
+  }
 
   const personelWorkload = await db.personel.findMany({
     include: {
@@ -218,7 +234,29 @@ async function AdminDashboard() {
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
               {level2WbsList.map((wbs) => {
                 const actualPct = Math.round((wbs.progressActual || 0) * 100);
-                const planPct = Math.round((wbs.progressPlan || 0) * 100);
+                // Compute planPct from multiple sources to avoid showing
+                // equal plan/actual when progressPlan is unset or zero.
+                let planPct = 0;
+                if (wbs.progressPlan && wbs.progressPlan > 0) {
+                  planPct = Math.round(wbs.progressPlan * 100);
+                } else if (wbs.monthlyProgress.length > 0) {
+                  const last = wbs.monthlyProgress[wbs.monthlyProgress.length - 1];
+                  if (last && last.plannedPct) {
+                    planPct = Math.round(last.plannedPct * 100);
+                  }
+                }
+                if (
+                  planPct === 0 &&
+                  wbs.startDate &&
+                  wbs.finishDate
+                ) {
+                  const now = new Date();
+                  const total = wbs.finishDate.getTime() - wbs.startDate.getTime();
+                  if (total > 0) {
+                    const elapsed = now.getTime() - wbs.startDate.getTime();
+                    planPct = Math.min(100, Math.max(0, Math.round((elapsed / total) * 100)));
+                  }
+                }
                 const deviation = actualPct - planPct;
                 return (
                   <div key={wbs.id} className="border rounded-lg p-3 space-y-2">

@@ -21,13 +21,6 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { notifySuccess, notifyError, notifyInfo } from "@/lib/notify";
 import { Loader2, RefreshCw, Trash2, Bell } from "lucide-react";
 

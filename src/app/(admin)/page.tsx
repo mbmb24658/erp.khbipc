@@ -85,8 +85,7 @@ async function AdminDashboard() {
       id: w.id,
       code: w.wbsCode,
       title: w.title,
-      status: w.status || "pending",
-      progressPct: Math.round((w.progressActual || 0) * 100),
+      status: (w as any).status || "pending",
       updatedAt: w.updatedAt,
       type: "pms" as const,
       assigneeName: null as string | null,
@@ -504,8 +503,6 @@ async function UserDashboard({ userId }: { userId: string }) {
       hrActual: true,
       hrPlan: true,
       strategicTopic: true,
-      isCorrective: true,
-      status: true,
       updatedAt: true,
     },
   });
@@ -555,11 +552,12 @@ async function UserDashboard({ userId }: { userId: string }) {
         durationDays: null as number | null,
         urgency: w.urgency || "normal",
         priority: w.priority ?? 3,
-        status: w.status || derivedStatus,
+        status: (w as any).status || derivedStatus,
         progressPct: (w.progressActual || 0) * 100,
         updatedAt: w.updatedAt.toISOString(),
         type: "pms" as const,
-        strategicTopic: w.strategicTopic || null,
+        strategicTopic: (w as any).strategicTopic || null,
+        isCorrective: false,
         needsMe,
       };
     });
@@ -594,7 +592,7 @@ async function UserDashboard({ userId }: { userId: string }) {
         isCorrective: a.isCorrective || false,
         needsMe: false,
       })),
-    ...userWbsActivities.filter((w) => w.status !== "completed" && (w.progressPct || 0) < 100),
+    ...userWbsActivities.filter((w) => (w as any).status !== "completed" && (w.progressPct || 0) < 100),
   ];
 
   // ---- Fetch recent status updates (WBS + Activity) — last 10 ----

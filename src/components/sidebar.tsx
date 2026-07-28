@@ -129,21 +129,21 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   };
 
   return (
-    <div className="flex h-full flex-col bg-sidebar text-sidebar-foreground">
-      {/* Logo */}
-      <div className="flex items-center gap-3 p-5 border-b border-sidebar-border">
-        <div className="w-10 h-10 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-xl flex items-center justify-center shadow">
+    <div className="flex h-full flex-col bg-sidebar text-sidebar-foreground border-l border-sidebar-border/50">
+      {/* Logo — glassmorphism header */}
+      <div className="flex items-center gap-3 px-5 py-4 border-b border-sidebar-border/50 glass">
+        <div className="w-10 h-10 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-xl flex items-center justify-center shadow-lg shadow-emerald-500/20">
           <Building2 className="w-5 h-5 text-white" />
         </div>
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-bold leading-tight">شرکت خوارزمی</p>
-          <p className="text-xs text-muted-foreground leading-tight">بندر امام</p>
+          <p className="text-sm font-bold leading-tight tracking-tight">شرکت خوارزمی</p>
+          <p className="text-[11px] text-muted-foreground leading-tight">بندر امام</p>
         </div>
       </div>
 
-      {/* Nav */}
-      <ScrollArea className="flex-1 px-3 py-4">
-        <nav className="space-y-1">
+      {/* Nav — clean, spacious, with smooth transitions */}
+      <ScrollArea className="flex-1 px-2.5 py-3">
+        <nav className="space-y-0.5">
           {visibleItems.map((item) => {
             const isActive = isItemActive(item);
             const Icon = item.icon;
@@ -154,24 +154,29 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
                 href={item.href}
                 onClick={onNavigate}
                 className={cn(
-                  "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors relative",
+                  "group flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 relative",
                   isActive
-                    ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-sm"
-                    : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                    ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-md shadow-primary/20"
+                    : "text-sidebar-foreground/60 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
                 )}
               >
-                <Icon className="w-4 h-4 shrink-0" />
-                <span className="flex-1 truncate">{item.label}</span>
+                <Icon className={cn(
+                  "w-[18px] h-[18px] shrink-0 transition-transform duration-200",
+                  isActive ? "scale-110" : "group-hover:scale-105"
+                )} />
+                <span className="flex-1 truncate text-[13px]">{item.label}</span>
                 {isNotifications && <NotificationBadge />}
-                {!isActive && !isNotifications && <ChevronLeft className="w-3 h-3 opacity-50" />}
+                {isActive && (
+                  <div className="absolute -right-2.5 top-1/2 -translate-y-1/2 w-1 h-6 rounded-l-full bg-sidebar-primary" />
+                )}
               </Link>
             );
           })}
         </nav>
       </ScrollArea>
 
-      {/* User */}
-      <div className="border-t border-sidebar-border p-3">
+      {/* User — glassmorphism footer */}
+      <div className="border-t border-sidebar-border/50 p-2.5 glass">
         <UserCard />
       </div>
     </div>
@@ -216,13 +221,13 @@ function UserCard() {
   const initials = name.charAt(0);
 
   return (
-    <div className="flex items-center gap-3 p-2 rounded-lg bg-sidebar-accent/50">
-      <Avatar className="w-9 h-9 bg-emerald-500 text-white">
-        <AvatarFallback>{initials}</AvatarFallback>
+    <div className="flex items-center gap-3 p-2.5 rounded-xl bg-sidebar-accent/40 hover:bg-sidebar-accent/60 transition-colors">
+      <Avatar className="w-9 h-9 bg-gradient-to-br from-emerald-500 to-teal-600 text-white ring-2 ring-background/50">
+        <AvatarFallback className="bg-transparent">{initials}</AvatarFallback>
       </Avatar>
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium truncate">{name}</p>
-        <p className="text-xs text-muted-foreground truncate">
+        <p className="text-sm font-semibold truncate">{name}</p>
+        <p className="text-[11px] text-muted-foreground truncate">
           {role === "admin" ? "مدیر سیستم" : role === "moderator" ? "ناظر" : "کاربر"}
         </p>
       </div>
@@ -231,7 +236,7 @@ function UserCard() {
         variant="ghost"
         onClick={() => signOut({ callbackUrl: "/login" })}
         title="خروج"
-        className="h-8 w-8"
+        className="h-8 w-8 text-muted-foreground hover:text-destructive transition-colors"
       >
         <LogOut className="w-4 h-4" />
       </Button>
@@ -263,8 +268,8 @@ export function SidebarWrapper({ children }: { children: React.ReactNode }) {
 
       {/* Main content */}
       <div className="flex-1 flex flex-col min-w-0">
-        {/* Top bar */}
-        <header className="h-14 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 sticky top-0 z-40 flex items-center px-4 lg:px-6 gap-3">
+        {/* Top bar — glassmorphism */}
+        <header className="h-14 border-b border-border/50 bg-background/80 backdrop-blur-xl supports-[backdrop-filter]:bg-background/60 sticky top-0 z-40 flex items-center px-4 lg:px-6 gap-3">
           <Button
             size="icon"
             variant="ghost"
@@ -273,17 +278,18 @@ export function SidebarWrapper({ children }: { children: React.ReactNode }) {
           >
             <Menu className="w-5 h-5" />
           </Button>
-          <div className="flex-1">
-            <h1 className="text-sm font-semibold text-muted-foreground">
+          <div className="flex-1 flex items-center gap-2">
+            <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+            <h1 className="text-sm font-semibold text-muted-foreground tracking-tight">
               سامانه مدیریت یکپارچه
             </h1>
           </div>
           <ThemeToggle />
           <Button
             size="sm"
-            variant="outline"
+            variant="ghost"
             onClick={() => signOut({ callbackUrl: "/login" })}
-            className="hidden sm:flex"
+            className="hidden sm:flex text-muted-foreground hover:text-destructive"
           >
             <LogOut className="w-4 h-4 ml-1" />
             خروج
@@ -293,8 +299,10 @@ export function SidebarWrapper({ children }: { children: React.ReactNode }) {
         <main className="flex-1 p-4 lg:p-6 overflow-auto">
           {children}
           {/* Footer with creator name */}
-          <footer className="mt-8 pt-4 border-t text-center text-xs text-muted-foreground">
-            طراحی و توسعه: محمد بلدزاده
+          <footer className="mt-12 pt-6 border-t border-border/50 text-center">
+            <p className="text-xs text-muted-foreground/70 tracking-wide">
+              طراحی و توسعه: محمد بلدزاده
+            </p>
           </footer>
         </main>
       </div>

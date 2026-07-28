@@ -37,6 +37,7 @@ import {
   FolderInput,
   Trash2,
   Loader2,
+  RefreshCw,
 } from "lucide-react";
 import { formatJalali } from "@/lib/jalali";
 
@@ -147,6 +148,14 @@ export default function WBSPage() {
   // Presets for "add child" flow — pre-fill parentId + level in the EditDialog
   const [presetParentId, setPresetParentId] = useState<string | null>(null);
   const [presetLevel, setPresetLevel] = useState<number | null>(null);
+  // Bulk move mode
+  const [bulkMode, setBulkMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkMoveOpen, setBulkMoveOpen] = useState(false);
+  const [bulkTargetId, setBulkTargetId] = useState<string>("");
+  const [bulkMoveLoading, setBulkMoveLoading] = useState(false);
+  const [autoPlanLoading, setAutoPlanLoading] = useState(false);
+  const [dragOverId, setDragOverId] = useState<string | null>(null);
 
   const fetchData = async () => {
     setLoading(true);
@@ -212,10 +221,26 @@ export default function WBSPage() {
       return (
         <div key={w.id}>
           <div
-            className="flex items-center gap-2 px-2 py-2 hover:bg-muted/50 rounded-md cursor-pointer border-b border-border/50"
+            className={`flex items-center gap-2 px-2 py-2 hover:bg-muted/50 rounded-md cursor-pointer border-b border-border/50 ${
+              bulkMode && selectedIds.has(w.id) ? "bg-primary/10 border-primary/30" : ""
+            } ${bulkMode && dragOverId === w.id ? "ring-2 ring-primary ring-offset-1" : ""}`}
             style={{ paddingRight: `${depth * 24 + 8}px` }}
-            onClick={() => router.push(`/wbs/${w.id}`)}
+            onClick={() => !bulkMode && router.push(`/wbs/${w.id}`)}
+            draggable={bulkMode}
+            onDragStart={(e) => handleDragStart(e, w.id)}
+            onDragOver={(e) => handleDragOver(e, w.id)}
+            onDragLeave={handleDragLeave}
+            onDrop={(e) => handleDrop(e, w.id)}
           >
+            {bulkMode && (
+              <input
+                type="checkbox"
+                checked={selectedIds.has(w.id)}
+                onChange={() => toggleSelect(w.id)}
+                onClick={(e) => e.stopPropagation()}
+                className="w-4 h-4 rounded shrink-0"
+              />
+            )}
             <button
               onClick={(e) => {
                 e.stopPropagation();
@@ -476,6 +501,112 @@ export default function WBSPage() {
     }
   };
 
+  // Toggle selection in bulk mode
+  const toggleSelect = (id: string) => {
+    const next = new Set(selectedIds);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    setSelectedIds(next);
+  };
+
+  // Bulk move selected items
+  const handleBulkMove = async () => {
+    if (selectedIds.size === 0) {
+      notifyError("هیچ فعالیتی انتخاب نشده است");
+      return;
+    }
+    setBulkMoveLoading(true);
+    try {
+      const res = await fetch("/api/wbs/bulk-move", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ids: Array.from(selectedIds),
+          targetParentId: bulkTargetId || null,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "خطا در انتقال");
+      notifySuccess(json.message || "فعالیت‌ها منتقل شدند");
+      setBulkMoveOpen(false);
+      setSelectedIds(new Set());
+      setBulkMode(false);
+      setBulkTargetId("");
+      fetchData();
+    } catch (e: any) {
+      notifyError(e.message || "خطا در انتقال");
+    } finally {
+      setBulkMoveLoading(false);
+    }
+  };
+
+  // Auto-compute plan progress
+  const handleAutoPlan = async () => {
+    setAutoPlanLoading(true);
+    try {
+      const res = await fetch("/api/wbs/auto-plan-progress", { method: "POST" });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "خطا");
+      notifySuccess(json.message || "پیشرفت برنامه محاسبه شد");
+      fetchData();
+    } catch (e: any) {
+      notifyError(e.message || "خطا در محاسبه");
+    } finally {
+      setAutoPlanLoading(false);
+    }
+  };
+
+  // Drag and drop handlers
+  const handleDragStart = (e: React.DragEvent, id: string) => {
+    if (!bulkMode) return;
+    e.dataTransfer.setData("text/plain", id);
+    e.dataTransfer.effectAllowed = "move";
+  };
+
+  const handleDragOver = (e: React.DragEvent, id: string) => {
+    if (!bulkMode) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    setDragOverId(id);
+  };
+
+  const handleDragLeave = () => {
+    setDragOverId(null);
+  };
+
+  const handleDrop = async (e: React.DragEvent, targetId: string) => {
+    if (!bulkMode) return;
+    e.preventDefault();
+    setDragOverId(null);
+    const draggedId = e.dataTransfer.getData("text/plain");
+    if (!draggedId || draggedId === targetId) return;
+
+    // Move the dragged item (and all selected) to the target
+    const idsToMove = selectedIds.has(draggedId) ? Array.from(selectedIds) : [draggedId];
+    if (idsToMove.includes(targetId)) {
+      notifyError("نمی‌توان به زیرمجموعه خودش منتقل کرد");
+      return;
+    }
+
+    setBulkMoveLoading(true);
+    try {
+      const res = await fetch("/api/wbs/bulk-move", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: idsToMove, targetParentId: targetId }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "خطا");
+      notifySuccess(json.message || "منتقل شد");
+      setSelectedIds(new Set());
+      fetchData();
+    } catch (e: any) {
+      notifyError(e.message || "خطا");
+    } finally {
+      setBulkMoveLoading(false);
+    }
+  };
+
   // Fields with parent options + org position options + multiselect options
   const fieldsWithParents = fields.map((f) =>
     f.key === "parentId"
@@ -559,12 +690,40 @@ export default function WBSPage() {
         description={`${data.length.toLocaleString("fa-IR")} فعالیت ثبت شده است`}
       >
         {canEdit && (
-          <Button onClick={openAdd}>
-            <Plus className="w-4 h-4 ml-1" />
-            افزودن فعالیت
-          </Button>
+          <div className="flex gap-2 flex-wrap">
+            <Button onClick={openAdd} variant="default">
+              <Plus className="w-4 h-4 ml-1" />
+              افزودن فعالیت
+            </Button>
+            <Button
+              onClick={() => {
+                setBulkMode(!bulkMode);
+                setSelectedIds(new Set());
+              }}
+              variant={bulkMode ? "destructive" : "outline"}
+            >
+              <FolderInput className="w-4 h-4 ml-1" />
+              {bulkMode ? "خروج از حالت دسته‌جمعی" : "تغییر والد دسته‌جمعی"}
+            </Button>
+            <Button onClick={handleAutoPlan} variant="outline" disabled={autoPlanLoading}>
+              <RefreshCw className={`w-4 h-4 ml-1 ${autoPlanLoading ? "animate-spin" : ""}`} />
+              محاسبه خودکار پیشرفت برنامه
+            </Button>
+            {bulkMode && selectedIds.size > 0 && (
+              <Button onClick={() => setBulkMoveOpen(true)} variant="default">
+                انتقال {selectedIds.size.toLocaleString("fa-IR")} فعالیت
+              </Button>
+            )}
+          </div>
         )}
       </PageHeader>
+
+      {/* Bulk mode hint */}
+      {bulkMode && (
+        <div className="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-900 rounded-lg p-3 mb-4 text-sm text-blue-800 dark:text-blue-200">
+          حالت انتقال دسته‌جمعی فعال است. فعالیت‌ها را انتخاب کنید و سپس روی «انتقال» کلیک کنید، یا یک فعالیت را بکشید و روی فعالیت هدف رها کنید (Drag & Drop).
+        </div>
+      )}
 
       {/* Stats */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 mb-6">
@@ -756,6 +915,42 @@ export default function WBSPage() {
             >
               {moveLoading && <Loader2 className="w-4 h-4 ml-1 animate-spin" />}
               ذخیره
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bulk move dialog */}
+      <Dialog open={bulkMoveOpen} onOpenChange={setBulkMoveOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>انتقال دسته‌جمعی فعالیت‌ها</DialogTitle>
+            <DialogDescription>
+              {selectedIds.size.toLocaleString("fa-IR")} فعالیت انتخاب شده است. والد جدید را انتخاب کنید:
+            </DialogDescription>
+          </DialogHeader>
+          <Select value={bulkTargetId} onValueChange={setBulkTargetId}>
+            <SelectTrigger>
+              <SelectValue placeholder="انتخاب والد جدید (یا ریشه)" />
+            </SelectTrigger>
+            <SelectContent className="max-h-[300px]">
+              <SelectItem value="">ریشه (سطح ۱ — بدون والد)</SelectItem>
+              {allWbs
+                .filter((w) => !selectedIds.has(w.id))
+                .map((w) => (
+                  <SelectItem key={w.id} value={w.id}>
+                    {w.wbsCode} - {w.title} (سطح {w.level.toLocaleString("fa-IR")})
+                  </SelectItem>
+                ))}
+            </SelectContent>
+          </Select>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setBulkMoveOpen(false)} disabled={bulkMoveLoading}>
+              انصراف
+            </Button>
+            <Button onClick={handleBulkMove} disabled={bulkMoveLoading}>
+              {bulkMoveLoading && <Loader2 className="w-4 h-4 ml-1 animate-spin" />}
+              انتقال {selectedIds.size.toLocaleString("fa-IR")} فعالیت
             </Button>
           </DialogFooter>
         </DialogContent>

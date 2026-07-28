@@ -213,10 +213,6 @@ export function WBSStatusUpdateForm({
     setLoading(false);
   };
 
-  const selectedLabels = delayCauses
-    .filter((c) => selectedDelayCauseIds.includes(c.id))
-    .map((c) => `${c.mainCategory} › ${c.subCategory} — ${c.rootCause}`);
-
   return (
     <div className="border rounded-lg p-4 space-y-3 bg-muted/30">
       <div className="grid gap-3 sm:grid-cols-2">

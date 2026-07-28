@@ -262,14 +262,14 @@ function GaugeChart({
         </CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="relative w-full" style={{ height: 220 }}>
+        <div className="relative w-full" style={{ height: 320 }}>
           <ResponsiveContainer width="100%" height="100%">
             <RadialBarChart
               cx="50%"
               cy="100%"
-              innerRadius="45%"
+              innerRadius="30%"
               outerRadius="100%"
-              barSize={18}
+              barSize={28}
               data={data}
               startAngle={180}
               endAngle={0}
@@ -277,31 +277,31 @@ function GaugeChart({
               <PolarAngleAxis type="number" domain={[0, 100]} tick={false} />
               <RadialBar
                 dataKey="value"
-                cornerRadius={10}
+                cornerRadius={14}
                 background={{ fill: "#f1f5f9" }}
               />
             </RadialBarChart>
           </ResponsiveContainer>
           {/* Center value display */}
-          <div className="absolute inset-x-0 bottom-0 flex flex-col items-center pb-2 pointer-events-none">
-            <span className="text-3xl font-bold leading-none" style={{ color: currentColor }}>
+          <div className="absolute inset-x-0 bottom-0 flex flex-col items-center pb-4 pointer-events-none">
+            <span className="text-5xl font-bold leading-none" style={{ color: currentColor }}>
               {currentValue.toFixed(0)}
             </span>
-            <span className="text-xs text-muted-foreground mt-1">از ۱۰۰</span>
+            <span className="text-sm text-muted-foreground mt-1">از ۱۰۰</span>
           </div>
         </div>
         {/* Legend */}
-        <div className="flex items-center justify-center gap-4 mt-2 text-xs flex-wrap">
-          <div className="flex items-center gap-1.5">
-            <div className="w-3 h-3 rounded" style={{ background: currentColor }} />
-            <span>وضعیت فعلی: {currentValue.toFixed(0)}</span>
+        <div className="flex items-center justify-center gap-6 mt-3 text-sm flex-wrap">
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-4 rounded" style={{ background: currentColor }} />
+            <span>وضعیت فعلی: <span className="font-bold">{currentValue.toFixed(0)}</span></span>
           </div>
-          <div className="flex items-center gap-1.5">
-            <div className="w-3 h-3 rounded" style={{ background: targetColor }} />
-            <span>وضعیت هدف: {targetValue.toFixed(0)}</span>
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-4 rounded" style={{ background: targetColor }} />
+            <span>وضعیت هدف: <span className="font-bold">{targetValue.toFixed(0)}</span></span>
           </div>
         </div>
-        <div className="text-center text-xs text-muted-foreground mt-1">
+        <div className="text-center text-xs text-muted-foreground mt-2">
           تعداد ریسک ارزیابی شده: {count.toLocaleString("fa-IR")}
         </div>
       </CardContent>

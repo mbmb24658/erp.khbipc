@@ -65,6 +65,7 @@ export interface UserDashboardActivity {
   updatedAt: string | Date;
   type?: "pms" | "activity";
   strategicTopic?: string | null;
+  isCorrective?: boolean;
   // For "needed me" filter — only set on PMS activities where the user's
   // org position is in hrPlan AND user's personelId is in hrActual.
   needsMe?: boolean;
@@ -142,7 +143,7 @@ type UrgencyFilter = "all" | "low" | "normal" | "high" | "urgent";
 type SortKey = "priority" | "urgency" | "dueDate" | "updatedAt" | "title";
 type TimeFilter = "today" | "week" | "all";
 type HrTypeFilter = "all" | "mine" | "needed";
-type ActivityTypeFilter = "all" | "pms" | "activity";
+type ActivityTypeFilter = "all" | "pms" | "activity" | "corrective";
 
 const sortOptions: { value: SortKey; label: string }[] = [
   { value: "priority", label: "اولویت (نزولی)" },
@@ -277,6 +278,7 @@ function applyTypeFilter(
   typeFilter: ActivityTypeFilter
 ): UserDashboardActivity[] {
   if (typeFilter === "all") return list;
+  if (typeFilter === "corrective") return list.filter((a) => a.isCorrective);
   return list.filter((a) =>
     typeFilter === "pms" ? a.type === "pms" : a.type === "activity"
   );
@@ -533,6 +535,7 @@ function StrategicTopicSection({
                   <SelectItem value="all">همه انواع</SelectItem>
                   <SelectItem value="pms">PMS</SelectItem>
                   <SelectItem value="activity">جاری</SelectItem>
+                  <SelectItem value="corrective">اصلاحی</SelectItem>
                 </SelectContent>
               </Select>
             </div>

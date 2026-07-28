@@ -1,38 +1,20 @@
+import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { DashboardCharts, type DashboardData } from "./dashboard-charts";
 import { strategicTopicColors, strategicTopicLabels, strategicTopicOrder } from "@/lib/topic-colors";
 
 export const dynamic = "force-dynamic";
 
-// =====================================================================
-// Public Organizational Dashboard — server component
-// Shows organization-wide overview: PMS S-curves, financial summary,
-// risk overview, issues overview, and personnel evaluation overview.
-// Visible to all authenticated users.
-// =====================================================================
-export default async function PublicDashboardPage() {
+// GET: aggregated dashboard overview data for the public organizational dashboard.
+// Returns stats, PMS S-curves, financial summary, risk overview, issues overview,
+// and personnel evaluation overview — all in one call.
+export async function GET() {
   const session = await getServerSession(authOptions);
   if (!session) {
-    return (
-      <div className="p-8 text-center text-muted-foreground">
-        لطفاً وارد شوید
-      </div>
-    );
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const data = await fetchDashboardData();
-
-  return <DashboardCharts data={data} />;
-}
-
-// =====================================================================
-// fetchDashboardData — runs all DB queries in parallel and assembles
-// the DashboardData shape expected by the DashboardCharts client.
-// Mirrors the shape returned by /api/dashboard.
-// =====================================================================
-async function fetchDashboardData(): Promise<DashboardData> {
   // ---------- 1. STATS ----------
   const [wbsCount, personelCount, assetCount, openRiskCount] = await Promise.all([
     db.wBS.count(),
@@ -42,6 +24,7 @@ async function fetchDashboardData(): Promise<DashboardData> {
   ]);
 
   // ---------- 2. PMS S-CURVES ----------
+  // Root WBS (level 1) S-curve
   const wbsRoot = await db.wBS.findFirst({
     where: { level: 1 },
     orderBy: { wbsCode: "asc" },
@@ -54,6 +37,7 @@ async function fetchDashboardData(): Promise<DashboardData> {
     actualPct: m.actualPct,
   }));
 
+  // Level-2 WBS topics (1.1 through 1.5)
   const level2WbsList = await db.wBS.findMany({
     where: { level: 2 },
     orderBy: { wbsCode: "asc" },
@@ -62,6 +46,7 @@ async function fetchDashboardData(): Promise<DashboardData> {
 
   const topics = level2WbsList.map((wbs) => {
     const topic = wbs.strategicTopic || wbs.wbsCode;
+    const label = strategicTopicLabels[topic] || wbs.title;
     return {
       topic,
       label: `${topic} - ${wbs.title}`,
@@ -99,6 +84,7 @@ async function fetchDashboardData(): Promise<DashboardData> {
   const totalCost = costs.reduce((s, c) => s + (c.programForecast || c.initialForecast || 0), 0);
   const totalRevenue = revenues.reduce((s, r) => s + (r.programForecast || r.initialForecast || 0), 0);
 
+  // Group costs by category
   const costsByCategoryMap: Record<string, number> = {};
   for (const c of costs) {
     const cat = c.category || "سایر";
@@ -109,6 +95,7 @@ async function fetchDashboardData(): Promise<DashboardData> {
     .sort((a, b) => b.value - a.value)
     .slice(0, 8);
 
+  // Group revenues by theme
   const revenuesByThemeMap: Record<string, number> = {};
   for (const r of revenues) {
     const theme = r.theme || "سایر";
@@ -133,6 +120,7 @@ async function fetchDashboardData(): Promise<DashboardData> {
     },
   });
 
+  // positiveCount / negativeCount: based on latest evaluation's impactType per risk
   let positiveCount = 0;
   let negativeCount = 0;
   for (const r of allRisks) {
@@ -145,6 +133,7 @@ async function fetchDashboardData(): Promise<DashboardData> {
     }
   }
 
+  // By status
   const statusMap: Record<string, number> = {};
   for (const r of allRisks) {
     const s = r.status || "open";
@@ -164,6 +153,7 @@ async function fetchDashboardData(): Promise<DashboardData> {
   }));
 
   // ---------- 5. ISSUES OVERVIEW ----------
+  // High-level: total, critical (high importance + low feasibility), byTopic
   const wbsItems = await db.wBS.findMany({
     where: { level: { gte: 4 } },
     select: {
@@ -196,6 +186,7 @@ async function fetchDashboardData(): Promise<DashboardData> {
   const HIGH_IMPORTANCE_THRESHOLD = 12;
   const LOW_FEASIBILITY_THRESHOLD = 0.3;
 
+  // Collect all org IDs from hrPlan
   const allOrgIds = new Set<string>();
   for (const c of [...wbsItems, ...activities]) {
     if (!c.hrPlan) continue;
@@ -318,6 +309,7 @@ async function fetchDashboardData(): Promise<DashboardData> {
     (i) => i.importance >= HIGH_IMPORTANCE_THRESHOLD && i.feasibility < LOW_FEASIBILITY_THRESHOLD
   ).length;
 
+  // byTopic — count issues per strategic topic (1.1 - 1.5 + "سایر")
   const topicMap: Record<string, number> = {};
   for (const t of strategicTopicOrder) topicMap[t] = 0;
   topicMap["سایر"] = 0;
@@ -335,6 +327,7 @@ async function fetchDashboardData(): Promise<DashboardData> {
   }));
 
   // ---------- 6. PERSONNEL EVALUATION OVERVIEW ----------
+  // This month's KPI evaluations
   const now = new Date();
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
   const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
@@ -365,6 +358,7 @@ async function fetchDashboardData(): Promise<DashboardData> {
       ? Math.round((validScores.reduce((s, v) => s + v, 0) / validScores.length) * 10) / 10
       : 0;
 
+  // Average score by position
   const byPositionMap: Record<string, { sum: number; count: number }> = {};
   for (const e of evaluationsThisMonth) {
     const score = e.percentageScore ?? (e.totalScore && e.maxScore ? (e.totalScore / e.maxScore) * 100 : null);
@@ -383,7 +377,7 @@ async function fetchDashboardData(): Promise<DashboardData> {
     .sort((a, b) => b.avgScore - a.avgScore)
     .slice(0, 10);
 
-  return {
+  return NextResponse.json({
     stats: { wbsCount, personelCount, assetCount, openRiskCount },
     pms: {
       rootScurve,
@@ -412,5 +406,5 @@ async function fetchDashboardData(): Promise<DashboardData> {
       avgScore,
       byPosition,
     },
-  };
+  });
 }

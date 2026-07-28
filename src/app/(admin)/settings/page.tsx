@@ -33,6 +33,7 @@ import {
 // All modules available for granular access control
 const ALL_MODULES: { path: string; label: string }[] = [
   { path: "/", label: "داشبورد" },
+  { path: "/portfolio", label: "کارپوشه" },
   { path: "/financial-dashboard", label: "داشبورد مالی" },
   { path: "/wbs", label: "PMS جامع سازمان" },
   { path: "/progress-update", label: "به‌روزرسانی پیشرفت" },

@@ -119,6 +119,10 @@ export default function NotificationsPage() {
   const [cfgDeleteOpen, setCfgDeleteOpen] = useState(false);
   const [cfgDeleting, setCfgDeleting] = useState<NotificationConfig | null>(null);
 
+  // Popup dialog for viewing a notification's full content
+  const [selectedNotif, setSelectedNotif] = useState<Notification | null>(null);
+  const [notifDeleteOpen, setNotifDeleteOpen] = useState(false);
+
   const fetchData = async () => {
     setLoading(true);
     try {
@@ -209,21 +213,57 @@ export default function NotificationsPage() {
         setNotifs((prev) =>
           prev.map((n) => (n.id === id ? { ...n, isRead } : n))
         );
+        setSelectedNotif((prev) => (prev && prev.id === id ? { ...prev, isRead } : prev));
       }
     } catch (e) {
       notifyError("خطا در به‌روزرسانی");
     }
   };
 
+  const deleteNotif = async () => {
+    if (!selectedNotif) return;
+    try {
+      const res = await fetch(`/api/notification/${selectedNotif.id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const e = await res.json();
+        throw new Error(e.error || "خطا در حذف");
+      }
+      notifySuccess("اعلان حذف شد");
+      setNotifDeleteOpen(false);
+      setNotifs((prev) => prev.filter((n) => n.id !== selectedNotif.id));
+      setSelectedNotif(null);
+    } catch (e: any) {
+      notifyError(e.message || "خطا در حذف");
+    }
+  };
+
   const notifColumns: Column<Notification>[] = [
-    { key: "title", label: "عنوان" },
+    {
+      key: "title",
+      label: "عنوان",
+      render: (r) => (
+        <button
+          type="button"
+          className="text-right font-medium hover:text-primary hover:underline cursor-pointer"
+          onClick={() => setSelectedNotif(r)}
+          title="مشاهده کامل"
+        >
+          {r.title}
+        </button>
+      ),
+    },
     {
       key: "message",
       label: "پیام",
       render: (r) => (
-        <span className="text-xs text-muted-foreground line-clamp-2 max-w-md">
+        <button
+          type="button"
+          className="text-right text-xs text-muted-foreground line-clamp-2 max-w-md hover:text-foreground cursor-pointer"
+          onClick={() => setSelectedNotif(r)}
+          title="مشاهده کامل"
+        >
           {r.message?.length > 80 ? `${r.message.slice(0, 80)}...` : r.message}
-        </span>
+        </button>
       ),
     },
     { key: "category", label: "دسته", render: (r) => r.category || "-" },
@@ -507,6 +547,71 @@ export default function NotificationsPage() {
         <SettingsIcon className="w-4 h-4" />
         <span>اعلان‌ها به صورت خودکار توسط سیستم تولید می‌شوند. می‌توانید قالب‌ها و تنظیمات اطلاع‌رسانی را مدیریت کنید.</span>
       </div>
+
+      {/* Notification detail popup */}
+      <Dialog open={!!selectedNotif} onOpenChange={(o) => !o && setSelectedNotif(null)}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{selectedNotif?.title}</DialogTitle>
+            <DialogDescription className="text-xs">
+              {formatJalaliDateTime(selectedNotif?.createdAt ?? null)}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center gap-2">
+              {selectedNotif?.category && (
+                <Badge variant="outline">{selectedNotif.category}</Badge>
+              )}
+              {selectedNotif?.priority && (() => {
+                const p = priorityMap[selectedNotif.priority];
+                return p ? <Badge variant={p.variant}>{p.label}</Badge> : null;
+              })()}
+              <Badge variant={selectedNotif?.isRead ? "secondary" : "default"}>
+                {selectedNotif?.isRead ? "خوانده شده" : "جدید"}
+              </Badge>
+              {selectedNotif?.template && (
+                <Badge variant="outline" className="font-mono text-xs">
+                  {selectedNotif.template.title}
+                </Badge>
+              )}
+            </div>
+            <div className="rounded-md border bg-muted/30 p-4 max-h-72 overflow-y-auto">
+              <p className="text-sm whitespace-pre-wrap break-words leading-6">
+                {selectedNotif?.message}
+              </p>
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            {selectedNotif && !selectedNotif.isRead && (
+              <Button
+                variant="default"
+                onClick={() => markAsRead(selectedNotif.id, true)}
+                className="ml-auto"
+              >
+                <MailCheck className="w-4 h-4 ml-1" />
+                علامت‌گذاری به عنوان خوانده شده
+              </Button>
+            )}
+            {isAdmin && selectedNotif && (
+              <Button
+                variant="destructive"
+                onClick={() => setNotifDeleteOpen(true)}
+              >
+                <Trash2 className="w-4 h-4 ml-1" />
+                حذف
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <ConfirmDialog
+        open={notifDeleteOpen}
+        onOpenChange={setNotifDeleteOpen}
+        title="حذف اعلان"
+        message="آیا از حذف این اعلان مطمئن هستید؟"
+        onConfirm={deleteNotif}
+      />
     </div>
   );
 }
@@ -533,6 +638,9 @@ function MessagesTab() {
   // Delete confirmation
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  // Popup dialog for viewing a message's full content
+  const [selectedMessage, setSelectedMessage] = useState<Message | null>(null);
 
   const fetchData = async () => {
     setLoading(true);
@@ -620,6 +728,7 @@ function MessagesTab() {
         setMessages((prev) =>
           prev.map((m) => (m.id === id ? { ...m, isRead } : m))
         );
+        setSelectedMessage((prev) => (prev && prev.id === id ? { ...prev, isRead } : prev));
       }
     } catch {
       notifyError("خطا در به‌روزرسانی");
@@ -637,6 +746,7 @@ function MessagesTab() {
       notifySuccess("پیام حذف شد");
       setDeleteOpen(false);
       setDeletingId(null);
+      setSelectedMessage((prev) => (prev && prev.id === deletingId ? null : prev));
       fetchData();
     } catch (e: any) {
       notifyError(e.message || "خطا در حذف");
@@ -648,7 +758,14 @@ function MessagesTab() {
       key: "fromUser",
       label: "فرستنده",
       render: (r) => (
-        <span className="text-sm">{r.fromUser.name}</span>
+        <button
+          type="button"
+          className="text-right text-sm hover:text-primary hover:underline cursor-pointer"
+          onClick={() => setSelectedMessage(r)}
+          title="مشاهده پیام"
+        >
+          {r.fromUser.name}
+        </button>
       ),
     },
     {
@@ -662,9 +779,14 @@ function MessagesTab() {
       key: "content",
       label: "متن",
       render: (r) => (
-        <span className="text-xs text-muted-foreground line-clamp-2 max-w-md">
+        <button
+          type="button"
+          className="text-right text-xs text-muted-foreground line-clamp-2 max-w-md hover:text-foreground cursor-pointer"
+          onClick={() => setSelectedMessage(r)}
+          title="مشاهده کامل"
+        >
           {r.content?.length > 80 ? `${r.content.slice(0, 80)}...` : r.content}
-        </span>
+        </button>
       ),
     },
     {
@@ -850,6 +972,72 @@ function MessagesTab() {
         message="آیا از حذف این پیام مطمئن هستید؟"
         onConfirm={handleDelete}
       />
+
+      {/* Message detail popup */}
+      <Dialog open={!!selectedMessage} onOpenChange={(o) => !o && setSelectedMessage(null)}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>مشاهده پیام</DialogTitle>
+            <DialogDescription className="text-xs">
+              {formatJalaliDateTime(selectedMessage?.createdAt ?? null)}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              <div>
+                <p className="text-xs text-muted-foreground mb-1">فرستنده</p>
+                <p className="font-medium">{selectedMessage?.fromUser.name}</p>
+                <p className="text-xs text-muted-foreground font-mono">
+                  {selectedMessage?.fromUser.username}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground mb-1">گیرنده</p>
+                <p className="font-medium">{selectedMessage?.toUser.name}</p>
+                <p className="text-xs text-muted-foreground font-mono">
+                  {selectedMessage?.toUser.username}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <Badge variant={selectedMessage?.isRead ? "secondary" : "default"}>
+                {selectedMessage?.isRead ? "خوانده شده" : "جدید"}
+              </Badge>
+            </div>
+            <div className="rounded-md border bg-muted/30 p-4 max-h-72 overflow-y-auto">
+              <p className="text-sm whitespace-pre-wrap break-words leading-6">
+                {selectedMessage?.content}
+              </p>
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            {selectedMessage &&
+              selectedMessage.toUserId === currentUserId &&
+              !selectedMessage.isRead && (
+                <Button
+                  variant="default"
+                  onClick={() => markAsRead(selectedMessage.id, true)}
+                  className="ml-auto"
+                >
+                  <MailCheck className="w-4 h-4 ml-1" />
+                  علامت‌گذاری به عنوان خوانده شده
+                </Button>
+              )}
+            {selectedMessage && (
+              <Button
+                variant="destructive"
+                onClick={() => {
+                  setDeletingId(selectedMessage.id);
+                  setDeleteOpen(true);
+                }}
+              >
+                <Trash2 className="w-4 h-4 ml-1" />
+                حذف
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

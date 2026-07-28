@@ -262,7 +262,29 @@ function GaugeChart({
         </CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="relative w-full" style={{ height: 320 }}>
+        {/* Big number display ABOVE the gauge — current vs target side by side */}
+        <div className="flex items-end justify-center gap-8 mb-2">
+          <div className="text-center">
+            <p className="text-xs text-muted-foreground mb-1">وضعیت فعلی</p>
+            <p
+              className="text-5xl font-bold leading-none"
+              style={{ color: currentColor }}
+            >
+              {currentValue.toFixed(0)}
+            </p>
+          </div>
+          <div className="text-center">
+            <p className="text-xs text-muted-foreground mb-1">وضعیت هدف</p>
+            <p
+              className="text-5xl font-bold leading-none"
+              style={{ color: targetColor }}
+            >
+              {targetValue.toFixed(0)}
+            </p>
+          </div>
+        </div>
+        {/* Gauge chart — purely visual half-circle arc */}
+        <div className="relative w-full" style={{ height: 200 }}>
           <ResponsiveContainer width="100%" height="100%">
             <RadialBarChart
               cx="50%"
@@ -282,13 +304,6 @@ function GaugeChart({
               />
             </RadialBarChart>
           </ResponsiveContainer>
-          {/* Center value display */}
-          <div className="absolute inset-x-0 bottom-0 flex flex-col items-center pb-4 pointer-events-none">
-            <span className="text-5xl font-bold leading-none" style={{ color: currentColor }}>
-              {currentValue.toFixed(0)}
-            </span>
-            <span className="text-sm text-muted-foreground mt-1">از ۱۰۰</span>
-          </div>
         </div>
         {/* Legend */}
         <div className="flex items-center justify-center gap-6 mt-3 text-sm flex-wrap">

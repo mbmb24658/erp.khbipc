@@ -22,10 +22,12 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { notifySuccess, notifyError, notifyInfo } from "@/lib/notify";
 import { Loader2, RefreshCw, Trash2, Bell } from "lucide-react";
 
@@ -57,10 +59,11 @@ export function ActivityDetailClient({ activity }: ActivityDetailClientProps) {
   const [loading, setLoading] = useState(false);
   const [reminderLoading, setReminderLoading] = useState(false);
 
-  // Delay cause state
+  // Delay cause state — cascading single-select
   const [delayCauses, setDelayCauses] = useState<DelayCause[]>([]);
-  const [selectedDelayCauseIds, setSelectedDelayCauseIds] = useState<string[]>([]);
-  const [delayCauseOpen, setDelayCauseOpen] = useState(false);
+  const [selectedMainCat, setSelectedMainCat] = useState<string>("");
+  const [selectedSubCat, setSelectedSubCat] = useState<string>("");
+  const [selectedCauseId, setSelectedCauseId] = useState<string>("");
 
   // Hide delay cause field for corrective activities themselves
   const isCorrective = !!activity.isCorrective;
@@ -78,14 +81,17 @@ export function ActivityDetailClient({ activity }: ActivityDetailClientProps) {
   }, [isDelayedState, delayCauses.length]);
 
   useEffect(() => {
-    if (!isDelayedState) setSelectedDelayCauseIds([]);
+    if (!isDelayedState) {
+      setSelectedMainCat("");
+      setSelectedSubCat("");
+      setSelectedCauseId("");
+    }
   }, [isDelayedState]);
 
-  const toggleDelayCause = (id: string) => {
-    setSelectedDelayCauseIds((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
-    );
-  };
+  const mainCategories = Array.from(new Set(delayCauses.map((c) => c.mainCategory)));
+  const uniqueSubCats = Array.from(new Set(delayCauses.filter((c) => c.mainCategory === selectedMainCat).map((c) => c.subCategory)));
+  const rootCauses = delayCauses.filter((c) => c.mainCategory === selectedMainCat && c.subCategory === selectedSubCat);
+  const selectedCause = delayCauses.find((c) => c.id === selectedCauseId);
 
   const sendReminder = async () => {
     setReminderLoading(true);
@@ -119,8 +125,8 @@ export function ActivityDetailClient({ activity }: ActivityDetailClientProps) {
         progressPct: Number(progressPct),
         notes,
       };
-      if (isDelayedState && selectedDelayCauseIds.length > 0) {
-        body.delayCauseIds = selectedDelayCauseIds;
+      if (isDelayedState && selectedCauseId) {
+        body.delayCauseIds = [selectedCauseId];
       }
 
       const res = await fetch("/api/activity-status-update", {
@@ -143,17 +149,15 @@ export function ActivityDetailClient({ activity }: ActivityDetailClientProps) {
       );
       setOpen(false);
       setNotes("");
-      setSelectedDelayCauseIds([]);
+      setSelectedMainCat("");
+      setSelectedSubCat("");
+      setSelectedCauseId("");
       router.refresh();
     } catch (e: any) {
       notifyError(e.message || "خطا در ثبت");
     }
     setLoading(false);
   };
-
-  const selectedLabels = delayCauses
-    .filter((c) => selectedDelayCauseIds.includes(c.id))
-    .map((c) => `${c.mainCategory} › ${c.subCategory} — ${c.rootCause}`);
 
   return (
     <>
@@ -201,87 +205,56 @@ export function ActivityDetailClient({ activity }: ActivityDetailClientProps) {
               />
             </div>
 
-            {/* Delay cause multi-select — only when delayed state */}
+            {/* Delay cause cascading single-select */}
             {isDelayedState && (
-              <div className="space-y-1.5">
-                <Label>علت تأخیر (اختیاری)</Label>
-                <Popover open={delayCauseOpen} onOpenChange={setDelayCauseOpen}>
-                  <PopoverTrigger asChild>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      className="w-full justify-start text-right font-normal h-auto min-h-[40px] py-2"
-                    >
-                      {selectedLabels.length > 0 ? (
-                        <div className="flex flex-wrap gap-1 w-full">
-                          {selectedLabels.map((label, i) => (
-                            <span
-                              key={i}
-                              className="inline-flex items-center gap-1 bg-rose-50 text-rose-700 text-xs rounded px-1.5 py-0.5 border border-rose-200"
-                            >
-                              {label}
-                            </span>
-                          ))}
-                        </div>
-                      ) : (
-                        <span className="text-muted-foreground">
-                          انتخاب علت‌های تأخیر مرتبط...
-                        </span>
-                      )}
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent
-                    className="w-[480px] max-h-[360px] overflow-y-auto p-2"
-                    align="start"
+              <div className="space-y-2">
+                <Label>علت تأخیر</Label>
+                <div className="grid gap-2 sm:grid-cols-3">
+                  <Select
+                    value={selectedMainCat}
+                    onValueChange={(v) => { setSelectedMainCat(v); setSelectedSubCat(""); setSelectedCauseId(""); }}
                   >
-                    <div className="space-y-1">
-                      {delayCauses.length === 0 ? (
-                        <p className="text-sm text-muted-foreground text-center py-4">
-                          در حال بارگذاری...
-                        </p>
-                      ) : (
-                        delayCauses.map((c) => {
-                          const checked = selectedDelayCauseIds.includes(c.id);
-                          return (
-                            <label
-                              key={c.id}
-                              className="flex items-start gap-2 p-2 rounded hover:bg-muted/50 cursor-pointer text-sm"
-                            >
-                              <input
-                                type="checkbox"
-                                checked={checked}
-                                onChange={() => toggleDelayCause(c.id)}
-                                className="w-4 h-4 rounded mt-0.5"
-                              />
-                              <div className="flex-1">
-                                <div className="font-medium">
-                                  {c.mainCategory} › {c.subCategory}
-                                </div>
-                                <div className="text-xs text-muted-foreground">
-                                  {c.rootCause}
-                                </div>
-                                <div className="text-xs text-emerald-700 mt-0.5">
-                                  راهکار: {c.solution}
-                                </div>
-                                {c.warning && (
-                                  <div className="text-xs text-rose-700 mt-0.5">
-                                    هشدار: {c.warning}
-                                  </div>
-                                )}
-                              </div>
-                              <Badge variant="outline" className="font-num text-[10px] shrink-0">
-                                {Math.round(c.impactPercent * 100).toLocaleString("fa-IR")}٪
-                              </Badge>
-                            </label>
-                          );
-                        })
-                      )}
-                    </div>
-                  </PopoverContent>
-                </Popover>
-                <p className="text-xs text-muted-foreground">
-                  در صورت انتخاب، برای هر علت یک «فعالیت اصلاحی» به‌صورت خودکار ایجاد می‌شود.
-                </p>
+                    <SelectTrigger><SelectValue placeholder="دسته اصلی" /></SelectTrigger>
+                    <SelectContent>
+                      {mainCategories.map((cat) => (<SelectItem key={cat} value={cat}>{cat}</SelectItem>))}
+                    </SelectContent>
+                  </Select>
+                  <Select
+                    value={selectedSubCat}
+                    onValueChange={(v) => { setSelectedSubCat(v); setSelectedCauseId(""); }}
+                    disabled={!selectedMainCat}
+                  >
+                    <SelectTrigger><SelectValue placeholder="دسته فرعی" /></SelectTrigger>
+                    <SelectContent>
+                      {uniqueSubCats.map((cat) => (<SelectItem key={cat} value={cat}>{cat}</SelectItem>))}
+                    </SelectContent>
+                  </Select>
+                  <Select
+                    value={selectedCauseId}
+                    onValueChange={(v) => setSelectedCauseId(v)}
+                    disabled={!selectedSubCat}
+                  >
+                    <SelectTrigger><SelectValue placeholder="ریشه مسئله" /></SelectTrigger>
+                    <SelectContent>
+                      {rootCauses.map((c) => (
+                        <SelectItem key={c.id} value={c.id}>
+                          {c.rootCause} ({Math.round(c.impactPercent * 100)}٪)
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                {selectedCause && (
+                  <div className="bg-rose-50 dark:bg-rose-950/20 border border-rose-200 rounded-md p-3 text-xs space-y-1">
+                    <p><span className="font-medium text-rose-700">راهکار:</span> {selectedCause.solution}</p>
+                    <p><span className="font-medium text-rose-700">تاثیر:</span> {Math.round(selectedCause.impactPercent * 100).toLocaleString("fa-IR")}٪</p>
+                    <p><span className="font-medium text-rose-700">مدت:</span> {selectedCause.durationDays.toLocaleString("fa-IR")} {selectedCause.unit}</p>
+                    {selectedCause.warning && (
+                      <p className="text-rose-800 font-medium">⚠️ هشدار: {selectedCause.warning}</p>
+                    )}
+                    <p className="text-muted-foreground pt-1">با ثبت، یک «فعالیت اصلاحی» خودکار ایجاد می‌شود.</p>
+                  </div>
+                )}
               </div>
             )}
 

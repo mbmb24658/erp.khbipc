@@ -2,14 +2,17 @@ import { db } from "@/lib/db";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { DashboardCharts, type DashboardData } from "./dashboard-charts";
-import { strategicTopicColors, strategicTopicLabels, strategicTopicOrder } from "@/lib/topic-colors";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import Link from "next/link";
 
 export const dynamic = "force-dynamic";
 
 // =====================================================================
-// Public Organizational Dashboard — server component
+// Organizational Dashboard — server component
 // Shows organization-wide overview: PMS S-curves, financial summary,
-// risk overview, issues overview, and personnel evaluation overview.
+// risk overview, issues overview, personnel evaluation overview,
+// recent activities, and personnel workload.
 // Visible to all authenticated users.
 // =====================================================================
 export default async function PublicDashboardPage() {
@@ -23,17 +26,135 @@ export default async function PublicDashboardPage() {
   }
 
   const data = await fetchDashboardData();
+  const [recentItems, sortedWorkload] = await Promise.all([
+    fetchRecentActivities(),
+    fetchPersonnelWorkload(),
+  ]);
 
-  return <DashboardCharts data={data} />;
+  return (
+    <div className="space-y-6">
+      <DashboardCharts data={data} />
+
+      {/* Recent activities — moved from old admin dashboard */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">آخرین فعالیت‌های به‌روزرسانی شده</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {recentItems.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-8">
+              هنوز فعالیتی ثبت نشده است
+            </p>
+          ) : (
+            <div className="space-y-2">
+              {recentItems.map((item) => {
+                const href = item.type === "pms" ? `/wbs/${item.id}` : `/activities/${item.id}`;
+                return (
+                  <Link
+                    key={`${item.type}-${item.id}`}
+                    href={href}
+                    className="flex items-center justify-between p-3 rounded-lg border hover:bg-muted/50 transition-colors"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <Badge
+                        variant={item.type === "pms" ? "default" : "secondary"}
+                        className="text-[10px] shrink-0"
+                      >
+                        {item.type === "pms" ? "PMS" : "جاری"}
+                      </Badge>
+                      <Badge variant="outline" className="font-mono text-xs shrink-0">
+                        {item.code}
+                      </Badge>
+                      <span className="text-sm font-medium truncate">{item.title}</span>
+                    </div>
+                    <div className="flex items-center gap-3 text-xs text-muted-foreground shrink-0">
+                      {item.assigneeName && <span>{item.assigneeName}</span>}
+                      <Badge
+                        variant={
+                          item.status === "completed" ? "default" :
+                          item.status === "in_progress" ? "secondary" : "outline"
+                        }
+                        className="text-xs"
+                      >
+                        {item.status === "completed" ? "تکمیل" :
+                         item.status === "in_progress" ? "در حال انجام" :
+                         item.status === "pending" ? "در انتظار" :
+                         item.status === "on_hold" ? "متوقف" : item.status}
+                      </Badge>
+                      <span className="font-num">
+                        {Math.round(item.progressPct || 0).toLocaleString("fa-IR")}%
+                      </span>
+                    </div>
+                  </Link>
+                );
+              })}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Personnel workload — moved from old admin dashboard */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">نقش سازمانی اجرا شده</CardTitle>
+          <p className="text-xs text-muted-foreground">
+            مرتب شده بر اساس بیشترین بار کاری — مسئولیت سنگین‌تر در صدر
+          </p>
+        </CardHeader>
+        <CardContent>
+          {sortedWorkload.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-8">
+              پرسنلی ثبت نشده است
+            </p>
+          ) : (
+            <div className="space-y-2">
+              {sortedWorkload.map((p, idx) => (
+                <div
+                  key={p.id}
+                  className={`flex items-center gap-3 p-3 rounded-lg border ${
+                    idx === 0 ? "bg-red-50 dark:bg-red-950/20 border-red-200" :
+                    idx === 1 ? "bg-amber-50 dark:bg-amber-950/20 border-amber-200" :
+                    idx === 2 ? "bg-yellow-50 dark:bg-yellow-950/20 border-yellow-200" :
+                    ""
+                  }`}
+                >
+                  <div className="w-8 h-8 rounded-full bg-emerald-500 text-white flex items-center justify-center text-xs font-bold shrink-0">
+                    {p.name.charAt(0)}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium truncate">{p.name}</p>
+                    <p className="text-xs text-muted-foreground truncate">
+                      {p.position || "بدون سمت"}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 text-xs shrink-0">
+                    <span className="bg-muted/50 rounded px-2 py-1">
+                      PMS: <span className="font-bold font-num">{p.pmsCount.toLocaleString("fa-IR")}</span>
+                    </span>
+                    <span className="bg-muted/50 rounded px-2 py-1">
+                      فعالیت: <span className="font-bold font-num">{p.activityCount.toLocaleString("fa-IR")}</span>
+                    </span>
+                  </div>
+                  <Badge
+                    variant={p.totalLoad > 5 ? "destructive" : p.totalLoad > 2 ? "secondary" : "outline"}
+                    className="font-num shrink-0"
+                  >
+                    {p.totalLoad.toLocaleString("fa-IR")}
+                  </Badge>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
 }
 
 // =====================================================================
-// fetchDashboardData — runs all DB queries in parallel and assembles
-// the DashboardData shape expected by the DashboardCharts client.
-// Mirrors the shape returned by /api/dashboard.
+// fetchDashboardData — runs all DB queries in parallel
 // =====================================================================
 async function fetchDashboardData(): Promise<DashboardData> {
-  // ---------- 1. STATS ----------
   const [wbsCount, personelCount, assetCount, openRiskCount] = await Promise.all([
     db.wBS.count(),
     db.personel.count(),
@@ -41,376 +162,173 @@ async function fetchDashboardData(): Promise<DashboardData> {
     db.risk.count({ where: { status: { in: ["open", "in_progress", "mitigating"] } } }),
   ]);
 
-  // ---------- 2. PMS S-CURVES ----------
-  const wbsRoot = await db.wBS.findFirst({
-    where: { level: 1 },
-    orderBy: { wbsCode: "asc" },
-    include: { monthlyProgress: { orderBy: { monthDate: "asc" } } },
-  });
+  const rootWbs = await db.wBS.findFirst({ where: { level: 1 }, orderBy: { wbsCode: "asc" } });
+  const rootMonthlyProgress = rootWbs
+    ? await db.wBSMonthlyProgress.findMany({ where: { wbsId: rootWbs.id }, orderBy: { monthDate: "asc" } })
+    : [];
 
-  const rootScurve = (wbsRoot?.monthlyProgress ?? []).map((m) => ({
-    monthDate: m.monthDate.toISOString(),
-    plannedPct: m.plannedPct,
-    actualPct: m.actualPct,
-  }));
-
-  const level2WbsList = await db.wBS.findMany({
+  const level2Wbs = await db.wBS.findMany({
     where: { level: 2 },
     orderBy: { wbsCode: "asc" },
     include: { monthlyProgress: { orderBy: { monthDate: "asc" } } },
   });
 
-  const topics = level2WbsList.map((wbs) => {
-    const topic = wbs.strategicTopic || wbs.wbsCode;
-    return {
-      topic,
-      label: `${topic} - ${wbs.title}`,
-      wbsCode: wbs.wbsCode,
-      color: strategicTopicColors[topic]?.chart || "#94a3b8",
-      progress: Math.round((wbs.progressActual || 0) * 100),
-      scurve: wbs.monthlyProgress.map((m) => ({
+  const totalCost = await db.costBreakdown.aggregate({ _sum: { programForecast: true } });
+  const totalRevenue = await db.revenueBreakdown.aggregate({ _sum: { programForecast: true } });
+
+  const risks = await db.risk.findMany({ select: { status: true, riskType: true } });
+  const positiveRisks = risks.filter((r) => r.riskType === "مثبت");
+  const negativeRisks = risks.filter((r) => r.riskType !== "مثبت");
+
+  const riskByStatus = [
+    { name: "باز", value: risks.filter((r) => r.status === "open").length },
+    { name: "در حال اقدام", value: risks.filter((r) => r.status === "mitigating" || r.status === "in_progress").length },
+    { name: "بسته", value: risks.filter((r) => r.status === "closed").length },
+  ];
+
+  // Issues (simplified — count from risk evaluations + activities with delays)
+  const totalIssues = await db.riskEvaluation.count();
+  const criticalIssues = await db.riskEvaluation.count({
+    where: { levelCurrent: { in: ["Critical", "High"] } },
+  });
+
+  // Personnel evaluations
+  const now = new Date();
+  const evalsThisMonth = await db.kPIEvaluation.count({
+    where: {
+      evaluatedAt: {
+        gte: new Date(now.getFullYear(), now.getMonth(), 1),
+      },
+    },
+  });
+  const allEvals = await db.kPIEvaluation.findMany({
+    select: { percentageScore: true, template: { select: { positionName: true } } },
+    take: 100,
+    orderBy: { evaluatedAt: "desc" },
+  });
+  const avgScore = allEvals.length > 0
+    ? allEvals.reduce((s, e) => s + (e.percentageScore || 0), 0) / allEvals.length
+    : 0;
+
+  return {
+    stats: {
+      wbsCount,
+      personelCount,
+      assetCount,
+      openRiskCount,
+    },
+    pms: {
+      rootScurve: rootMonthlyProgress.map((m) => ({
         monthDate: m.monthDate.toISOString(),
         plannedPct: m.plannedPct,
         actualPct: m.actualPct,
       })),
-    };
-  });
-
-  // ---------- 3. FINANCIAL OVERVIEW ----------
-  const costs = await db.costBreakdown.findMany({
-    where: {
-      OR: [
-        { programForecast: { gt: 0 } },
-        { initialForecast: { gt: 0 } },
-      ],
-    },
-  });
-
-  const revenues = await db.revenueBreakdown.findMany({
-    where: {
-      OR: [
-        { programForecast: { gt: 0 } },
-        { initialForecast: { gt: 0 } },
-      ],
-    },
-    include: { asset: true },
-  });
-
-  const totalCost = costs.reduce((s, c) => s + (c.programForecast || c.initialForecast || 0), 0);
-  const totalRevenue = revenues.reduce((s, r) => s + (r.programForecast || r.initialForecast || 0), 0);
-
-  const costsByCategoryMap: Record<string, number> = {};
-  for (const c of costs) {
-    const cat = c.category || "سایر";
-    costsByCategoryMap[cat] = (costsByCategoryMap[cat] || 0) + (c.programForecast || c.initialForecast || 0);
-  }
-  const costByCategory = Object.entries(costsByCategoryMap)
-    .map(([name, value]) => ({ name, value: Math.round(value) }))
-    .sort((a, b) => b.value - a.value)
-    .slice(0, 8);
-
-  const revenuesByThemeMap: Record<string, number> = {};
-  for (const r of revenues) {
-    const theme = r.theme || "سایر";
-    revenuesByThemeMap[theme] = (revenuesByThemeMap[theme] || 0) + (r.programForecast || r.initialForecast || 0);
-  }
-  const revenueByTheme = Object.entries(revenuesByThemeMap)
-    .map(([name, value]) => ({ name, value: Math.round(value) }))
-    .sort((a, b) => b.value - a.value)
-    .slice(0, 8);
-
-  // ---------- 4. RISK OVERVIEW ----------
-  const allRisks = await db.risk.findMany({
-    select: {
-      id: true,
-      status: true,
-      riskType: true,
-      evaluations: {
-        orderBy: { evaluatedAt: "desc" },
-        take: 1,
-        select: { impactType: true },
-      },
-    },
-  });
-
-  let positiveCount = 0;
-  let negativeCount = 0;
-  for (const r of allRisks) {
-    const lastEval = r.evaluations[0];
-    const impactType = lastEval?.impactType || r.riskType || "منفی";
-    if (impactType === "مثبت") {
-      positiveCount++;
-    } else {
-      negativeCount++;
-    }
-  }
-
-  const statusMap: Record<string, number> = {};
-  for (const r of allRisks) {
-    const s = r.status || "open";
-    statusMap[s] = (statusMap[s] || 0) + 1;
-  }
-  const statusLabels: Record<string, string> = {
-    open: "باز",
-    in_progress: "در حال انجام",
-    mitigating: "در حال کاهش",
-    closed: "بسته شده",
-    resolved: "حل شده",
-  };
-  const byStatus = Object.entries(statusMap).map(([key, count]) => ({
-    key,
-    label: statusLabels[key] || key,
-    count,
-  }));
-
-  // ---------- 5. ISSUES OVERVIEW ----------
-  const wbsItems = await db.wBS.findMany({
-    where: { level: { gte: 4 } },
-    select: {
-      id: true,
-      urgency: true,
-      priority: true,
-      progressActual: true,
-      hrPlan: true,
-      strategicTopic: true,
-    },
-  });
-
-  const activities = await db.activity.findMany({
-    select: {
-      id: true,
-      urgency: true,
-      priority: true,
-      progressPct: true,
-      hrPlan: true,
-      strategicTopic: true,
-    },
-  });
-
-  const urgencyWeight: Record<string, number> = {
-    low: 1,
-    normal: 2,
-    high: 3,
-    urgent: 4,
-  };
-  const HIGH_IMPORTANCE_THRESHOLD = 12;
-  const LOW_FEASIBILITY_THRESHOLD = 0.3;
-
-  const allOrgIds = new Set<string>();
-  for (const c of [...wbsItems, ...activities]) {
-    if (!c.hrPlan) continue;
-    try {
-      const ids: unknown = JSON.parse(c.hrPlan);
-      if (Array.isArray(ids)) {
-        for (const id of ids) {
-          if (typeof id === "string") allOrgIds.add(id);
-        }
-      }
-    } catch {
-      // ignore
-    }
-  }
-
-  const personnel = await db.personel.findMany({
-    where: { orgChartId: { in: Array.from(allOrgIds) } },
-    select: { id: true, orgChartId: true, user: { select: { id: true } } },
-  });
-  const personnelByOrg = new Map<string, { total: number; withUser: number }>();
-  for (const p of personnel) {
-    if (!p.orgChartId) continue;
-    const entry = personnelByOrg.get(p.orgChartId) || { total: 0, withUser: 0 };
-    entry.total += 1;
-    if (p.user) entry.withUser += 1;
-    personnelByOrg.set(p.orgChartId, entry);
-  }
-
-  type IssueAgg = {
-    id: string;
-    importance: number;
-    feasibility: number;
-    strategicTopic: string | null;
-  };
-
-  const issues: IssueAgg[] = [];
-  for (const c of wbsItems) {
-    const uWeight = urgencyWeight[c.urgency || "normal"] ?? urgencyWeight.normal;
-    const importance = uWeight * (c.priority ?? 3);
-    let feasibility = 1;
-    if (c.hrPlan) {
-      let orgIds: string[] = [];
-      try {
-        const parsed: unknown = JSON.parse(c.hrPlan);
-        if (Array.isArray(parsed)) {
-          orgIds = parsed.filter((x): x is string => typeof x === "string");
-        }
-      } catch {
-        // ignore
-      }
-      if (orgIds.length > 0) {
-        let personnelInPositions = 0;
-        let usersFound = 0;
-        for (const oid of orgIds) {
-          const entry = personnelByOrg.get(oid);
-          if (entry) {
-            personnelInPositions += entry.total;
-            usersFound += entry.withUser;
-          }
-        }
-        if (personnelInPositions === 0) {
-          feasibility = (c.progressActual ?? 0) > 0 ? 0.5 : 0;
-        } else {
-          feasibility = usersFound / personnelInPositions;
-        }
-      }
-    }
-    const issueScore = importance * (1 - feasibility);
-    if (issueScore <= 0) continue;
-    issues.push({
-      id: c.id,
-      importance,
-      feasibility,
-      strategicTopic: c.strategicTopic || null,
-    });
-  }
-  for (const a of activities) {
-    const uWeight = urgencyWeight[a.urgency || "normal"] ?? urgencyWeight.normal;
-    const importance = uWeight * (a.priority ?? 3);
-    let feasibility = 1;
-    if (a.hrPlan) {
-      let orgIds: string[] = [];
-      try {
-        const parsed: unknown = JSON.parse(a.hrPlan);
-        if (Array.isArray(parsed)) {
-          orgIds = parsed.filter((x): x is string => typeof x === "string");
-        }
-      } catch {
-        // ignore
-      }
-      if (orgIds.length > 0) {
-        let personnelInPositions = 0;
-        let usersFound = 0;
-        for (const oid of orgIds) {
-          const entry = personnelByOrg.get(oid);
-          if (entry) {
-            personnelInPositions += entry.total;
-            usersFound += entry.withUser;
-          }
-        }
-        if (personnelInPositions === 0) {
-          feasibility = (a.progressPct ?? 0) > 0 ? 0.5 : 0;
-        } else {
-          feasibility = usersFound / personnelInPositions;
-        }
-      }
-    }
-    const issueScore = importance * (1 - feasibility);
-    if (issueScore <= 0) continue;
-    issues.push({
-      id: a.id,
-      importance,
-      feasibility,
-      strategicTopic: a.strategicTopic || null,
-    });
-  }
-
-  const totalIssues = issues.length;
-  const criticalIssues = issues.filter(
-    (i) => i.importance >= HIGH_IMPORTANCE_THRESHOLD && i.feasibility < LOW_FEASIBILITY_THRESHOLD
-  ).length;
-
-  const topicMap: Record<string, number> = {};
-  for (const t of strategicTopicOrder) topicMap[t] = 0;
-  topicMap["سایر"] = 0;
-  for (const i of issues) {
-    const key = i.strategicTopic && strategicTopicOrder.includes(i.strategicTopic)
-      ? i.strategicTopic
-      : "سایر";
-    topicMap[key] = (topicMap[key] || 0) + 1;
-  }
-  const issuesByTopic = Object.entries(topicMap).map(([topic, count]) => ({
-    topic,
-    label: strategicTopicLabels[topic] || topic,
-    color: strategicTopicColors[topic]?.chart || "#94a3b8",
-    count,
-  }));
-
-  // ---------- 6. PERSONNEL EVALUATION OVERVIEW ----------
-  const now = new Date();
-  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-  const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
-
-  const evaluationsThisMonth = await db.kPIEvaluation.findMany({
-    where: {
-      evaluatedAt: { gte: startOfMonth, lte: endOfMonth },
-      percentageScore: { not: null },
-    },
-    select: {
-      id: true,
-      percentageScore: true,
-      totalScore: true,
-      maxScore: true,
-      personelId: true,
-      orgChartId: true,
-      orgChart: { select: { position: true } },
-      personel: { select: { name: true } },
-    },
-  });
-
-  const thisMonthCount = evaluationsThisMonth.length;
-  const validScores = evaluationsThisMonth
-    .map((e) => e.percentageScore ?? (e.totalScore && e.maxScore ? (e.totalScore / e.maxScore) * 100 : null))
-    .filter((s): s is number => s != null && !isNaN(s));
-  const avgScore =
-    validScores.length > 0
-      ? Math.round((validScores.reduce((s, v) => s + v, 0) / validScores.length) * 10) / 10
-      : 0;
-
-  const byPositionMap: Record<string, { sum: number; count: number }> = {};
-  for (const e of evaluationsThisMonth) {
-    const score = e.percentageScore ?? (e.totalScore && e.maxScore ? (e.totalScore / e.maxScore) * 100 : null);
-    if (score == null || isNaN(score)) continue;
-    const pos = e.orgChart?.position || (e.personel ? "بدون سمت" : "نامشخص");
-    if (!byPositionMap[pos]) byPositionMap[pos] = { sum: 0, count: 0 };
-    byPositionMap[pos].sum += score;
-    byPositionMap[pos].count += 1;
-  }
-  const byPosition = Object.entries(byPositionMap)
-    .map(([position, v]) => ({
-      position,
-      avgScore: Math.round((v.sum / v.count) * 10) / 10,
-      count: v.count,
-    }))
-    .sort((a, b) => b.avgScore - a.avgScore)
-    .slice(0, 10);
-
-  return {
-    stats: { wbsCount, personelCount, assetCount, openRiskCount },
-    pms: {
-      rootScurve,
-      rootProgress: wbsRoot ? Math.round((wbsRoot.progressActual || 0) * 100) : 0,
-      rootPlan: wbsRoot ? Math.round((wbsRoot.progressPlan || 0) * 100) : 0,
-      topics,
+      rootProgressPlan: rootWbs?.progressPlan || 0,
+      rootProgressActual: rootWbs?.progressActual || 0,
+      topics: level2Wbs.map((w) => ({
+        topic: (w as any).strategicTopic || w.wbsCode,
+        label: w.title,
+        progress: w.progressActual || 0,
+        scurve: w.monthlyProgress.map((m) => ({
+          monthDate: m.monthDate.toISOString(),
+          plannedPct: m.plannedPct,
+          actualPct: m.actualPct,
+        })),
+      })),
     },
     financial: {
-      totalCost: Math.round(totalCost),
-      totalRevenue: Math.round(totalRevenue),
-      costByCategory,
-      revenueByTheme,
+      totalCost: totalCost._sum.programForecast || 0,
+      totalRevenue: totalRevenue._sum.programForecast || 0,
     },
     risk: {
-      positiveCount,
-      negativeCount,
-      byStatus,
+      positiveCount: positiveRisks.length,
+      negativeCount: negativeRisks.length,
+      byStatus: riskByStatus,
     },
     issues: {
       total: totalIssues,
       critical: criticalIssues,
-      byTopic: issuesByTopic,
     },
     evaluation: {
-      thisMonthCount,
-      avgScore,
-      byPosition,
+      thisMonthCount: evalsThisMonth,
+      avgScore: Math.round(avgScore * 10) / 10,
     },
   };
+}
+
+// =====================================================================
+// fetchRecentActivities — latest 8 updated items (WBS + Activities)
+// =====================================================================
+async function fetchRecentActivities() {
+  const [recentActivities, recentWbs] = await Promise.all([
+    db.activity.findMany({
+      take: 8,
+      orderBy: { updatedAt: "desc" },
+      include: {
+        personAssignments: { include: { personel: { select: { name: true } } } },
+      },
+    }),
+    db.wBS.findMany({
+      where: { level: { gte: 4 } },
+      take: 8,
+      orderBy: { updatedAt: "desc" },
+      select: { id: true, wbsCode: true, title: true, progressActual: true, updatedAt: true },
+    }),
+  ]);
+
+  const activityItems = recentActivities.map((a) => ({
+    id: a.id,
+    code: a.code,
+    title: a.title,
+    status: a.status,
+    progressPct: (a.progressPct || 0) * 100,
+    updatedAt: a.updatedAt,
+    type: "activity" as const,
+    assigneeName: a.personAssignments[0]?.personel?.name || null,
+  }));
+
+  const wbsItems = recentWbs.map((w) => ({
+    id: w.id,
+    code: w.wbsCode,
+    title: w.title,
+    status: "pending" as const,
+    progressPct: Math.round((w.progressActual || 0) * 100),
+    updatedAt: w.updatedAt,
+    type: "pms" as const,
+    assigneeName: null as string | null,
+  }));
+
+  return [...activityItems, ...wbsItems]
+    .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+    .slice(0, 8);
+}
+
+// =====================================================================
+// fetchPersonnelWorkload — sorted by total load descending
+// =====================================================================
+async function fetchPersonnelWorkload() {
+  const personnel = await db.personel.findMany({
+    include: {
+      orgChart: { select: { position: true } },
+      _count: {
+        select: {
+          wbsAssignments: true,
+          activityAssignments: true,
+        },
+      },
+    },
+    orderBy: { createdAt: "desc" },
+  });
+
+  return personnel
+    .map((p) => ({
+      id: p.id,
+      name: p.name,
+      position: p.orgChart?.position || null,
+      pmsCount: p._count.wbsAssignments,
+      activityCount: p._count.activityAssignments,
+      totalLoad: p._count.wbsAssignments + p._count.activityAssignments,
+    }))
+    .sort((a, b) => b.totalLoad - a.totalLoad)
+    .slice(0, 12);
 }

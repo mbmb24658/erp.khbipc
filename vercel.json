@@ -4,6 +4,15 @@
   "buildCommand": "node scripts/switch-db.js postgres && prisma generate && next build",
   "installCommand": "npm install",
   "functions": {
+    "src/app/api/wbs/auto-plan-progress/route.ts": {
+      "maxDuration": 300
+    },
+    "src/app/api/wbs/backfill-topics/route.ts": {
+      "maxDuration": 300
+    },
+    "src/app/api/wbs/bulk-move/route.ts": {
+      "maxDuration": 60
+    },
     "src/app/api/**/route.ts": {
       "maxDuration": 30
     }

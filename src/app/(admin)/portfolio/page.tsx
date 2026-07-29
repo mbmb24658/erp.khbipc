@@ -67,12 +67,46 @@ export default async function PortfolioPage() {
       priority: true,
       strategicTopic: true,
       isCorrective: true,
+      wbsId: true,
       updatedAt: true,
     },
     orderBy: [{ priority: "desc" }, { updatedAt: "desc" }],
   });
 
+  // Build a lookup map of WBS strategic topics (id → strategicTopic derived from wbsCode)
+  // This is used as a fallback when Activity.strategicTopic is null but the activity
+  // is linked to a WBS via wbsId.
+  const activityWbsIds = assignedActivities
+    .map((a) => a.wbsId)
+    .filter((id): id is string => !!id);
+  let wbsTopicLookup: Record<string, string | null> = {};
+  if (activityWbsIds.length > 0) {
+    try {
+      const wbsRows = await db.$queryRawUnsafe<
+        { id: string; wbsCode: string; strategicTopic: string | null }[]
+      >(
+        `SELECT "id", "wbsCode", "strategicTopic" FROM "WBS" WHERE "id" IN (${activityWbsIds
+          .map((_, i) => `$${i + 1}`)
+          .join(",")})`,
+        ...activityWbsIds
+      );
+      for (const w of Array.isArray(wbsRows) ? wbsRows : []) {
+        // Prefer explicit strategicTopic; fall back to derived from wbsCode
+        if (w.strategicTopic) {
+          wbsTopicLookup[w.id] = w.strategicTopic;
+        } else if (w.wbsCode) {
+          const parts = String(w.wbsCode).split(".");
+          wbsTopicLookup[w.id] = parts.length >= 2 ? `${parts[0]}.${parts[1]}` : null;
+        }
+      }
+    } catch {
+      // ignore — fall back to null
+    }
+  }
+
   // Fetch WBS activities assigned to this user (via hrActual JSON array)
+  // Include strategicTopic in the select; if Prisma client doesn't have the field
+  // (e.g. on a stale deployment), the raw fallback below computes it from wbsCode.
   const allWbs = await db.wBS.findMany({
     where: {
       level: { gte: 4 },
@@ -90,6 +124,7 @@ export default async function PortfolioPage() {
       priority: true,
       hrActual: true,
       hrPlan: true,
+      strategicTopic: true,
       updatedAt: true,
     },
   });
@@ -140,7 +175,15 @@ export default async function PortfolioPage() {
         progressPct: (w.progressActual || 0) * 100,
         updatedAt: w.updatedAt.toISOString(),
         type: "pms" as const,
-        strategicTopic: (w as any).strategicTopic || null,
+        // Prefer explicit strategicTopic from DB; fall back to derived from wbsCode
+        strategicTopic:
+          (w as any).strategicTopic ||
+          (w.wbsCode
+            ? (() => {
+                const parts = String(w.wbsCode).split(".");
+                return parts.length >= 2 ? `${parts[0]}.${parts[1]}` : null;
+              })()
+            : null),
         isCorrective: false,
         needsMe,
       };
@@ -177,7 +220,11 @@ export default async function PortfolioPage() {
         progressPct: a.progressPct,
         updatedAt: a.updatedAt.toISOString(),
         type: "activity" as const,
-        strategicTopic: a.strategicTopic || null,
+        // Use Activity.strategicTopic if set; otherwise derive from linked WBS
+        strategicTopic:
+          a.strategicTopic ||
+          (a.wbsId ? wbsTopicLookup[a.wbsId] || null : null) ||
+          null,
         isCorrective: a.isCorrective || false,
         needsMe: false,
       })),

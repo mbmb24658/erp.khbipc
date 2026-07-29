@@ -541,33 +541,57 @@ export default function WBSPage() {
     }
   };
 
-  // Auto-compute plan progress
+  // Auto-compute plan progress (uses bulk SQL — should complete in seconds even for 1000+ WBS items)
   const handleAutoPlan = async () => {
     setAutoPlanLoading(true);
     try {
-      const res = await fetch("/api/wbs/auto-plan-progress", { method: "POST" });
+      // Set a 90s client-side timeout so user gets feedback if Vercel cuts off the request
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 90000);
+      const res = await fetch("/api/wbs/auto-plan-progress", {
+        method: "POST",
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "خطا");
-      notifySuccess(json.message || "پیشرفت برنامه محاسبه شد");
+      const detail = json.monthlyRecords
+        ? ` (${json.monthlyRecords.toLocaleString("fa-IR")} رکورد ماهانه)`
+        : "";
+      notifySuccess((json.message || "پیشرفت برنامه محاسبه شد") + detail);
       fetchData();
     } catch (e: any) {
-      notifyError(e.message || "خطا در محاسبه");
+      if (e?.name === "AbortError") {
+        notifyError("درخواست بیشتر از ۹۰ ثانیه طول کشید. لطفاً دوباره تلاش کنید.");
+      } else {
+        notifyError(e.message || "خطا در محاسبه");
+      }
     } finally {
       setAutoPlanLoading(false);
     }
   };
 
-  // Backfill strategic topics
+  // Backfill strategic topics (always force=true to refresh all entries)
   const handleBackfillTopics = async () => {
     setBackfillLoading(true);
     try {
-      const res = await fetch("/api/wbs/backfill-topics", { method: "POST" });
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 90000);
+      const res = await fetch("/api/wbs/backfill-topics?force=true", {
+        method: "POST",
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "خطا");
       notifySuccess(json.message || "موضوعات استراتژیک بروزرسانی شد");
       fetchData();
     } catch (e: any) {
-      notifyError(e.message || "خطا در بروزرسانی");
+      if (e?.name === "AbortError") {
+        notifyError("درخواست بیشتر از ۹۰ ثانیه طول کشید. لطفاً دوباره تلاش کنید.");
+      } else {
+        notifyError(e.message || "خطا در بروزرسانی");
+      }
     } finally {
       setBackfillLoading(false);
     }

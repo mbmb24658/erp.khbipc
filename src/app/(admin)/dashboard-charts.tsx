@@ -182,21 +182,25 @@ export function DashboardCharts({ data }: { data: DashboardData }) {
   const { stats, pms, financial, risk, issues, evaluation } = data;
 
   // Financial bar chart data: top categories from both cost and revenue
-  const financialBarData = financial.costByCategory.slice(0, 6).map((c) => ({
+  const costByCat = financial?.costByCategory || [];
+  const revByTheme = financial?.revenueByTheme || [];
+  const financialBarData = costByCat.slice(0, 6).map((c) => ({
     name: c.name,
     هزینه: c.value,
-    درآمد: financial.revenueByTheme.find((r) => r.name === c.name)?.value || 0,
+    درآمد: revByTheme.find((r) => r.name === c.name)?.value || 0,
   }));
 
   // Risk donut chart data
-  const riskDonutData = risk.byStatus.filter((s) => s.count > 0).map((s) => ({
+  const riskByStatus = risk?.byStatus || [];
+  const riskDonutData = riskByStatus.filter((s) => s.count > 0).map((s) => ({
     name: s.label,
     value: s.count,
     color: riskStatusColors[s.key] || "#94a3b8",
   }));
 
   // Issues by topic bar chart data
-  const issuesBarData = issues.byTopic.map((t) => ({
+  const issuesByTopic = issues?.byTopic || [];
+  const issuesBarData = issuesByTopic.map((t) => ({
     name: t.topic,
     label: t.label,
     تعداد: t.count,
@@ -204,7 +208,8 @@ export function DashboardCharts({ data }: { data: DashboardData }) {
   }));
 
   // Evaluation by position bar chart data
-  const evaluationBarData = evaluation.byPosition.map((p) => ({
+  const evalByPos = evaluation?.byPosition || [];
+  const evaluationBarData = evalByPos.map((p) => ({
     name: p.position,
     میانگین: p.avgScore,
   }));
@@ -270,13 +275,13 @@ export function DashboardCharts({ data }: { data: DashboardData }) {
               <Progress value={pms.rootPlan} className="mt-2 h-2" />
             </div>
             <div className="h-32 min-h-32">
-              <SCurveChart data={pms.rootScurve} />
+              <SCurveChart data={pms?.rootScurve || []} />
             </div>
           </div>
         </div>
 
         {/* Level-2 topic S-curves */}
-        {pms.topics.length > 0 ? (
+        {(pms?.topics || []).length > 0 ? (
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             {pms.topics.map((t) => {
               const deviation = t.progress - pms.rootPlan;

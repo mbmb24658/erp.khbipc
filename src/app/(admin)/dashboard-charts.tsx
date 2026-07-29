@@ -179,11 +179,16 @@ function SectionCard({
 // Main DashboardCharts component
 // =================================================================
 export function DashboardCharts({ data }: { data: DashboardData }) {
-  const { stats, pms, financial, risk, issues, evaluation } = data;
+  const stats = data?.stats || { wbsCount: 0, personelCount: 0, assetCount: 0, openRiskCount: 0 };
+  const pms = data?.pms || { rootScurve: [], rootProgress: 0, rootPlan: 0, topics: [] };
+  const financial = data?.financial || { totalCost: 0, totalRevenue: 0 };
+  const risk = data?.risk || { positiveCount: 0, negativeCount: 0, byStatus: [] };
+  const issues = data?.issues || { total: 0, critical: 0, byTopic: [] };
+  const evaluation = data?.evaluation || { thisMonthCount: 0, avgScore: 0, byPosition: [] };
 
   // Financial bar chart data: top categories from both cost and revenue
-  const costByCat = financial?.costByCategory || [];
-  const revByTheme = financial?.revenueByTheme || [];
+  const costByCat = (financial as any)?.costByCategory || [];
+  const revByTheme = (financial as any)?.revenueByTheme || [];
   const financialBarData = costByCat.slice(0, 6).map((c) => ({
     name: c.name,
     هزینه: c.value,
@@ -191,15 +196,15 @@ export function DashboardCharts({ data }: { data: DashboardData }) {
   }));
 
   // Risk donut chart data
-  const riskByStatus = risk?.byStatus || [];
+  const riskByStatus = (risk as any)?.byStatus || [];
   const riskDonutData = riskByStatus.filter((s) => s.count > 0).map((s) => ({
     name: s.label,
     value: s.count,
-    color: riskStatusColors[s.key] || "#94a3b8",
+    color: (riskStatusColors as any)[s.key] || "#94a3b8",
   }));
 
   // Issues by topic bar chart data
-  const issuesByTopic = issues?.byTopic || [];
+  const issuesByTopic = (issues as any)?.byTopic || [];
   const issuesBarData = issuesByTopic.map((t) => ({
     name: t.topic,
     label: t.label,
@@ -208,7 +213,7 @@ export function DashboardCharts({ data }: { data: DashboardData }) {
   }));
 
   // Evaluation by position bar chart data
-  const evalByPos = evaluation?.byPosition || [];
+  const evalByPos = (evaluation as any)?.byPosition || [];
   const evaluationBarData = evalByPos.map((p) => ({
     name: p.position,
     میانگین: p.avgScore,
@@ -263,16 +268,16 @@ export function DashboardCharts({ data }: { data: DashboardData }) {
             <div>
               <p className="text-xs text-muted-foreground">پیشرفت واقعی چشم‌انداز</p>
               <p className="text-3xl font-bold text-emerald-700 mt-1 font-num">
-                {pms.rootProgress.toLocaleString("fa-IR")}%
+                {(pms.rootProgress || 0).toLocaleString("fa-IR")}%
               </p>
-              <Progress value={pms.rootProgress} className="mt-2 h-2" />
+              <Progress value={pms.rootProgress || 0} className="mt-2 h-2" />
             </div>
             <div>
               <p className="text-xs text-muted-foreground">پیشرفت برنامه‌ریزی شده</p>
               <p className="text-3xl font-bold text-blue-700 mt-1 font-num">
-                {pms.rootPlan.toLocaleString("fa-IR")}%
+                {(pms.rootPlan || 0).toLocaleString("fa-IR")}%
               </p>
-              <Progress value={pms.rootPlan} className="mt-2 h-2" />
+              <Progress value={pms.rootPlan || 0} className="mt-2 h-2" />
             </div>
             <div className="h-32 min-h-32">
               <SCurveChart data={pms?.rootScurve || []} />
@@ -284,7 +289,7 @@ export function DashboardCharts({ data }: { data: DashboardData }) {
         {(pms?.topics || []).length > 0 ? (
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             {pms.topics.map((t) => {
-              const deviation = t.progress - pms.rootPlan;
+              const deviation = (t.progress || 0) - (pms.rootPlan || 0);
               return (
                 <div key={t.topic} className="border rounded-lg p-3 space-y-2">
                   <div className="flex items-center justify-between gap-2">

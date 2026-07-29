@@ -155,6 +155,7 @@ export default function WBSPage() {
   const [bulkTargetId, setBulkTargetId] = useState<string>("");
   const [bulkMoveLoading, setBulkMoveLoading] = useState(false);
   const [autoPlanLoading, setAutoPlanLoading] = useState(false);
+  const [backfillLoading, setBackfillLoading] = useState(false);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
 
   const fetchData = async () => {
@@ -556,6 +557,22 @@ export default function WBSPage() {
     }
   };
 
+  // Backfill strategic topics
+  const handleBackfillTopics = async () => {
+    setBackfillLoading(true);
+    try {
+      const res = await fetch("/api/wbs/backfill-topics", { method: "POST" });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "خطا");
+      notifySuccess(json.message || "موضوعات استراتژیک بروزرسانی شد");
+      fetchData();
+    } catch (e: any) {
+      notifyError(e.message || "خطا در بروزرسانی");
+    } finally {
+      setBackfillLoading(false);
+    }
+  };
+
   // Drag and drop handlers
   const handleDragStart = (e: React.DragEvent, id: string) => {
     if (!bulkMode) return;
@@ -708,6 +725,10 @@ export default function WBSPage() {
             <Button onClick={handleAutoPlan} variant="outline" disabled={autoPlanLoading}>
               <RefreshCw className={`w-4 h-4 ml-1 ${autoPlanLoading ? "animate-spin" : ""}`} />
               محاسبه خودکار پیشرفت برنامه
+            </Button>
+            <Button onClick={handleBackfillTopics} variant="outline" disabled={backfillLoading}>
+              <RefreshCw className={`w-4 h-4 ml-1 ${backfillLoading ? "animate-spin" : ""}`} />
+              بروزرسانی موضوعات استراتژیک
             </Button>
             {bulkMode && selectedIds.size > 0 && (
               <Button onClick={() => setBulkMoveOpen(true)} variant="default">

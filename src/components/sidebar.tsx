@@ -26,12 +26,16 @@ import {
   ChevronLeft,
   Sun,
   Moon,
+  Sparkles,
   Activity,
   Briefcase,
   FileBarChart,
   UserCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useModernMode } from "@/components/modern/modern-mode-provider";
+import { LineSidebar as LineSidebarModern } from "@/components/modern/line-sidebar";
+import { FloatingLines } from "@/components/modern/floating-lines";
 
 const navItems = [
   { href: "/", label: "داشبورد", icon: LayoutDashboard, exact: true, roles: ["admin", "moderator", "user"] },
@@ -56,26 +60,47 @@ const navItems = [
 
 function ThemeToggle() {
   const { theme, setTheme } = useTheme();
+  const { isModern, toggleModern } = useModernMode();
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
   if (!mounted) return null;
   const isDark = theme === "dark";
   return (
-    <Button
-      size="icon"
-      variant="ghost"
-      onClick={() => setTheme(isDark ? "light" : "dark")}
-      title={isDark ? "حالت روشن" : "حالت تیره"}
-      className="h-9 w-9"
-    >
-      {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-    </Button>
+    <div className="flex items-center gap-1">
+      <Button
+        size="icon"
+        variant="ghost"
+        onClick={() => setTheme(isDark ? "light" : "dark")}
+        title={isDark ? "حالت روشن" : "حالت تیره"}
+        className="h-9 w-9"
+      >
+        {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+      </Button>
+      <Button
+        size="icon"
+        variant="ghost"
+        onClick={toggleModern}
+        title={isModern ? "خروج از حالت مدرن" : "حالت مدرن"}
+        className={cn(
+          "h-9 w-9 relative",
+          isModern && "text-primary bg-primary/10"
+        )}
+      >
+        <Sparkles
+          className={cn("w-4 h-4", isModern && "drop-shadow-[0_0_6px_currentColor]")}
+        />
+        {isModern && (
+          <span className="absolute inset-0 rounded-md ring-1 ring-primary/30 animate-pulse" />
+        )}
+      </Button>
+    </div>
   );
 }
 
 export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
   const { data: session } = useSession();
+  const { isModern } = useModernMode();
   const userRole = (session?.user as any)?.role || "user";
   const [moduleAccess, setModuleAccess] = useState<string[] | null>(null);
   const [fetchedAccess, setFetchedAccess] = useState(false);
@@ -130,6 +155,37 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
     return pathname.startsWith(item.href);
   };
 
+  // ====== Modern sidebar variant ======
+  if (isModern) {
+    return (
+      <div className="flex h-full flex-col bg-sidebar text-sidebar-foreground border-l border-sidebar-border/50 relative">
+        {/* Logo */}
+        <div className="flex items-center gap-3 px-5 py-4 border-b border-sidebar-border/50 glass">
+          <div className="w-10 h-10 bg-gradient-to-br from-emerald-400 to-teal-500 rounded-xl flex items-center justify-center shadow-lg shadow-emerald-500/40">
+            <Building2 className="w-5 h-5 text-white" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-bold leading-tight tracking-tight text-gradient">شرکت خوارزمی</p>
+            <p className="text-[11px] text-muted-foreground leading-tight">بندر امام</p>
+          </div>
+        </div>
+
+        {/* Modern LineSidebar navigation */}
+        <ModernSidebarContent
+          items={visibleItems}
+          isItemActive={isItemActive}
+          onNavigate={onNavigate}
+        />
+
+        {/* User */}
+        <div className="border-t border-sidebar-border/50 p-2.5 glass">
+          <UserCard />
+        </div>
+      </div>
+    );
+  }
+
+  // ====== Classic sidebar (default) ======
   return (
     <div className="flex h-full flex-col bg-sidebar text-sidebar-foreground border-l border-sidebar-border/50">
       {/* Logo — glassmorphism header */}
@@ -182,6 +238,50 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
         <UserCard />
       </div>
     </div>
+  );
+}
+
+// ============================================================
+// ModernSidebarContent — uses LineSidebar component
+// ============================================================
+function ModernSidebarContent({
+  items,
+  isItemActive,
+  onNavigate,
+}: {
+  items: typeof navItems;
+  isItemActive: (item: typeof navItems[0]) => boolean;
+  onNavigate?: () => void;
+}) {
+  const lineItems = items.map((item) => {
+    const Icon = item.icon;
+    const isActive = isItemActive(item);
+    const isNotifications = item.href === "/notifications";
+    return {
+      href: item.href,
+      label: item.label,
+      icon: Icon,
+      active: isActive,
+      onClick: onNavigate,
+      badge: isNotifications ? <NotificationBadge /> : undefined,
+    };
+  });
+
+  return (
+    <ScrollArea className="flex-1 px-2 py-4">
+      <LineSidebarModern
+        items={lineItems}
+        accentColor="#10b981"
+        textColor="#94a3b8"
+        markerColor="#334155"
+        showIndex={false}
+        proximityRadius={120}
+        maxShift={16}
+        fontSize={1.05}
+        itemGap={4}
+        smoothing={120}
+      />
+    </ScrollArea>
   );
 }
 
@@ -248,10 +348,24 @@ function UserCard() {
 
 export function SidebarWrapper({ children }: { children: React.ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const { isModern } = useModernMode();
   return (
-    <div className="min-h-screen flex bg-background">
+    <div className="min-h-screen flex bg-background relative">
+      {/* FloatingLines background — only visible in modern mode (CSS-controlled) */}
+      {isModern && (
+        <FloatingLines
+          lineCount={14}
+          speed={0.3}
+          colors={["#10b981", "#3b82f6", "#8b5cf6"]}
+          thickness={1.2}
+          opacity={0.35}
+          interactive
+          className="floating-lines-canvas"
+        />
+      )}
+
       {/* Desktop sidebar */}
-      <aside className="hidden lg:flex w-64 shrink-0 border-l border-sidebar-border">
+      <aside className="hidden lg:flex w-64 shrink-0 border-l border-sidebar-border relative z-10">
         <Sidebar />
       </aside>
 
@@ -269,7 +383,7 @@ export function SidebarWrapper({ children }: { children: React.ReactNode }) {
       )}
 
       {/* Main content */}
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex-1 flex flex-col min-w-0 relative z-10">
         {/* Top bar — glassmorphism */}
         <header className="h-14 border-b border-border/50 bg-background/80 backdrop-blur-xl supports-[backdrop-filter]:bg-background/60 sticky top-0 z-40 flex items-center px-4 lg:px-6 gap-3">
           <Button
@@ -281,9 +395,15 @@ export function SidebarWrapper({ children }: { children: React.ReactNode }) {
             <Menu className="w-5 h-5" />
           </Button>
           <div className="flex-1 flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+            <div className={cn(
+              "w-2 h-2 rounded-full animate-pulse",
+              isModern ? "modern-pulse-dot" : "bg-emerald-500"
+            )} />
             <h1 className="text-sm font-semibold text-muted-foreground tracking-tight">
               سامانه مدیریت یکپارچه
+              {isModern && (
+                <span className="mr-2 text-[10px] text-primary/70 font-mono">[MODERN]</span>
+              )}
             </h1>
           </div>
           <ThemeToggle />

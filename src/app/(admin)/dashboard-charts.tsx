@@ -28,6 +28,8 @@ import {
   DollarSign,
 } from "lucide-react";
 import { formatJalali } from "@/lib/jalali";
+import { ElectricBorder, ELECTRIC_PRESETS } from "@/components/modern/electric-border";
+import { useModernMode } from "@/components/modern/modern-mode-provider";
 
 // =================================================================
 // Types — mirror the shape returned by /api/dashboard
@@ -120,20 +122,23 @@ const riskStatusColors: Record<string, string> = {
 };
 
 // =================================================================
-// Stat Cards Row
+// Stat Cards Row — with ElectricBorder in modern mode
 // =================================================================
 function StatCard({
   label,
   value,
   icon: Icon,
   color,
+  preset = "stat",
 }: {
   label: string;
   value: string;
   icon: any;
   color: string;
+  preset?: keyof typeof ELECTRIC_PRESETS;
 }) {
-  return (
+  const { isModern } = useModernMode();
+  const card = (
     <Card>
       <CardContent className="p-4">
         <div className="flex items-center gap-3">
@@ -150,21 +155,30 @@ function StatCard({
       </CardContent>
     </Card>
   );
+  if (!isModern) return card;
+  return (
+    <ElectricBorder enabled {...ELECTRIC_PRESETS[preset]}>
+      {card}
+    </ElectricBorder>
+  );
 }
 
 // =================================================================
-// Section Card wrapper
+// Section Card wrapper — with ElectricBorder in modern mode
 // =================================================================
 function SectionCard({
   title,
   subtitle,
   children,
+  preset = "project",
 }: {
   title: string;
   subtitle?: string;
   children: React.ReactNode;
+  preset?: keyof typeof ELECTRIC_PRESETS;
 }) {
-  return (
+  const { isModern } = useModernMode();
+  const card = (
     <Card>
       <CardHeader>
         <CardTitle className="text-base">{title}</CardTitle>
@@ -172,6 +186,12 @@ function SectionCard({
       </CardHeader>
       <CardContent>{children}</CardContent>
     </Card>
+  );
+  if (!isModern) return card;
+  return (
+    <ElectricBorder enabled {...ELECTRIC_PRESETS[preset]}>
+      {card}
+    </ElectricBorder>
   );
 }
 
@@ -236,24 +256,28 @@ export function DashboardCharts({ data }: { data: DashboardData }) {
           value={stats.wbsCount.toLocaleString("fa-IR")}
           icon={Network}
           color="bg-gradient-to-br from-emerald-500 to-teal-600"
+          preset="project"
         />
         <StatCard
           label="تعداد پرسنل"
           value={stats.personelCount.toLocaleString("fa-IR")}
           icon={Users}
           color="bg-gradient-to-br from-violet-500 to-purple-600"
+          preset="hr"
         />
         <StatCard
           label="تعداد دارایی‌ها"
           value={stats.assetCount.toLocaleString("fa-IR")}
           icon={Package}
           color="bg-gradient-to-br from-amber-500 to-orange-600"
+          preset="financial"
         />
         <StatCard
           label="ریسک‌های باز"
           value={stats.openRiskCount.toLocaleString("fa-IR")}
           icon={AlertTriangle}
           color="bg-gradient-to-br from-rose-500 to-red-600"
+          preset="kpi"
         />
       </div>
 
@@ -261,6 +285,7 @@ export function DashboardCharts({ data }: { data: DashboardData }) {
       <SectionCard
         title="پیشرفت PMS"
         subtitle="منحنی S پیشرفت برنامه‌ریزی شده در برابر پیشرفت واقعی — ریشه و موضوعات استراتژیک"
+        preset="project"
       >
         {/* Root S-curve */}
         <div className="border rounded-lg p-4 mb-4 bg-gradient-to-br from-emerald-50/50 to-teal-50/50">
@@ -333,6 +358,7 @@ export function DashboardCharts({ data }: { data: DashboardData }) {
       <SectionCard
         title="وضعیت مالی"
         subtitle="نمای کلی هزینه‌ها و درآمدها به تفکیک دسته‌بندی"
+        preset="financial"
       >
         <div className="grid gap-4 md:grid-cols-2 mb-4">
           <div className="border rounded-lg p-4 bg-gradient-to-br from-rose-50/50 to-red-50/50">
@@ -404,6 +430,7 @@ export function DashboardCharts({ data }: { data: DashboardData }) {
       <SectionCard
         title="وضعیت ریسک"
         subtitle="تعداد ریسک‌های مثبت و منفی و توزیع بر اساس وضعیت"
+        preset="kpi"
       >
         <div className="grid gap-4 md:grid-cols-3 mb-4">
           <div className="border rounded-lg p-4 text-center bg-emerald-50/50 dark:bg-emerald-950/20">
@@ -464,6 +491,7 @@ export function DashboardCharts({ data }: { data: DashboardData }) {
       <SectionCard
         title="نظام مسائل"
         subtitle="مجموع مسائل، مسائل بحرانی و توزیع بر اساس موضوع استراتژیک"
+        preset="hr"
       >
         <div className="grid gap-4 md:grid-cols-2 mb-4">
           <div className="border rounded-lg p-4 bg-muted/30">
@@ -535,6 +563,7 @@ export function DashboardCharts({ data }: { data: DashboardData }) {
       <SectionCard
         title="ارزیابی پرسنل"
         subtitle="نمای کلی ارزیابی‌های انجام‌شده در ماه جاری و میانگین امتیاز به تفکیک سمت"
+        preset="hr"
       >
         <div className="grid gap-4 md:grid-cols-2 mb-4">
           <div className="border rounded-lg p-4 bg-muted/30">

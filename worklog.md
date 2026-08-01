@@ -98,3 +98,63 @@ Stage Summary:
    - glow روی کارت‌ها و دکمه‌ها
 5. صفحه ورود همیشه با این افکت‌ها نمایش داده می‌شود (اولین مواجهه کاربر)
 
+---
+Task ID: 3
+Agent: main
+Task: بازطراحی کامل داشبورد با ساختار جدید (KPI + TrendChart + TopItems + جدول + عملکرد پرسنل)
+
+Work Log:
+- بازنویسی کامل `src/app/(admin)/dashboard-charts.tsx`:
+  * حذف SectionCardهای تخصصی (PMS، مالی، ریسک، مسائل، ارزیابی)
+  * ایجاد کامپوننت TrendChart (AreaChart) برای نمایش روند پیشرفت سازمان
+  * ایجاد کامپوننت TopItemsList برای نمایش ۵ مورد برتر (پرهزینه‌ترین دسته‌ها)
+  * ایجاد کامپوننت RecentTable (جدول تمام‌عرض آخرین فعالیت‌ها)
+  * ایجاد کامپوننت PersonnelStatsGrid (گرید پرسنل با لوگو و ۶ متریک)
+  * به‌روزرسانی DashboardData interface با فیلدهای جدید: recentItems, personnelStats
+  * حفظ ElectricBorder برای حالت مدرن روی همه‌ی کارت‌ها
+- بازنویسی `src/app/(admin)/page.tsx`:
+  * کوئری‌های جدید: costBreakdown، recentActivities، recentWbs، personnel، users، userLogs
+  * محاسبه ۶ متریک برای هر پرسنل:
+    - تعداد فعالیت‌ها (از activityAssignments)
+    - میانگین درصد پیشرفت (از progressPct)
+    - تعداد فعالیت‌های «خارج از چارت» (با delayCauseId)
+    - تعداد فعالیت‌های اصلاحی (isCorrective)
+    - تعداد ثبت علت تأخیر (delayCauseId)
+    - میزان حضور در سامانه (از UserLog در ۳۰ روز اخیر)
+  * تجمیع costByCategory (گروه‌بندی بر اساس category)
+  * merge کردن recentActivities + recentWbs (۱۰ مورد آخر)
+  * ساخت lookup برای userLogCounts (با فیلتر ۳۰ روز اخیر)
+
+ساختار داشبورد جدید:
+  ردیف ۱: هدر «داشبورد» + توضیح «نمای کلی عملکرد سازمان»
+  ردیف ۲: ۴ کارت KPI:
+    - تعداد پرسنل (آیکون Users، رنگ emerald/teal)
+    - پروژه‌های فعال PMS (آیکون Network، رنگ blue/indigo)
+    - درآمد کل (آیکون DollarSign، رنگ amber/orange)
+    - ریسک‌های باز (آیکون AlertTriangle، رنگ rose/red)
+  ردیف ۳: گرید ۲ ستونی:
+    - ستون چپ (۲/۳): TrendChart — AreaChart روند پیشرفت برنامه‌ریزی‌شده vs واقعی
+    - ستون راست (۱/۳): TopItemsList — ۵ دسته‌ی پرهزینه
+  ردیف ۴: PersonnelStatsGrid — کارت پرسنل با:
+    - آواتار (با initials) + نام + سمت
+    - گرید ۳×۲ متریک با آیکون و رنگ متمایز برای هر متریک
+  ردیف ۵: RecentTable — جدول تمام‌عرض با ستون‌های:
+    - عنوان (با badge نوع PMS/جاری + کد + عنوان)
+    - وضعیت (Badge)
+    - مسئول
+    - تاریخ (فارسی)
+    - درصد پیشرفت (Progress bar + عدد)
+
+Stage Summary:
+- ۲ فایل اصلاح شد: page.tsx (بازنویسی کامل)، dashboard-charts.tsx (بازنویسی کامل)
+- Build موفق با `npx next build`
+- TypeScript type-check تمیز
+- فایل zip: `/home/z/my-project/download/khbipc-dashboard-v2.zip` (۱۲KB)
+
+نکات:
+- همه‌ی اعداد فارسی و با کاما جدا می‌شوند (toLocaleString("fa-IR"))
+- تاریخ‌ها به فارسی نمایش داده می‌شوند
+- در حالت مدرن، ElectricBorder روی همه‌ی کارت‌ها فعال است
+- compact amount: م.ت (میلیارد)، م.م (میلیون)، ه.ت (هزار تومان)
+
+

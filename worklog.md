@@ -40,3 +40,61 @@ Stage Summary:
   1. روی «محاسبه خودکار پیشرفت برنامه» کلیک کند → درصد پیشرفت برنامه برای همه فعالیت‌ها محاسبه می‌شود
   2. روی «بروزرسانی موضوعات استراتژیک» کلیک کند → همه فعالیت‌های PMS و Activity به موضوع استراتژیک خودشان متصل می‌شوند
   3. به کارپوشه برود → فعالیت‌ها باید در موضوعات استراتژیک صحیح دسته‌بندی شده باشند
+
+---
+Task ID: 2
+Agent: main
+Task: افزودن «حالت مدرن» با افکت‌های ElectricBorder، FloatingLines و LineSidebar
+
+Work Log:
+- بررسی ساختار تم فعلی: ThemeProvider از next-themes با dark/light attribute
+- ایجاد ۴ کامپوننت جدید در `src/components/modern/`:
+  * `modern-mode-provider.tsx`: Context + localStorage برای ذخیره حالت مدرن
+  * `electric-border.tsx`: افکت حاشیه برقی متحرک با conic-gradient
+  * `floating-lines.tsx`: پس‌زمینه خطوط شناور با canvas (interactive mouse)
+  * `line-sidebar.tsx`: سایدبار با واکنش به نزدیکی ماوس
+- افزودن ModernModeProvider به Providers در `src/components/providers.tsx`
+- افزودن دکمه «حالت مدرن» (آیکون Sparkles) به ThemeToggle در `src/components/sidebar.tsx`
+  * کنار دکمه dark/light
+  * فعال‌سازی با انیمیشن pulse و ring
+  * نمایش badge "[MODERN]" در هدر
+- بازنویسی Sidebar برای پشتیبانی از دو حالت:
+  * Classic: همان طراحی قبلی (emerald/teal)
+  * Modern: LineSidebar با proximity effect و neon colors
+- افزودن FloatingLines به پس‌زمینه اصلی (فقط در حالت مدرن)
+- بازنویسی صفحه login:
+  * FloatingLines همیشه فعال (اولین مواجهه کاربر)
+  * ElectricBorder دور کارت ورود
+  * دکمه toggle modern در گوشه بالا
+- اعمال ElectricBorder روی داشبورد:
+  * ۴ StatCard با presetهای متفاوت (project, hr, financial, kpi)
+  * ۵ SectionCard با presetهای مرتبط
+  * پارامترها: color, speed, chaos, thickness, borderRadius
+- به‌روزرسانی `src/app/globals.css`:
+  * @keyframes eb-rotate و eb-pulse برای ElectricBorder
+  * @property --eb-angle برای انیمیشن angle
+  * رنگ‌های modern mode (deep navy + neon emerald)
+  * body background با radial gradient
+  * card glow، glass enhancement، button glow، scrollbar neon
+  * قوانین CSS برای نمایش/مخفی کردن electric border و floating lines
+
+Stage Summary:
+- ۹ فایل ایجاد/اصلاح شد:
+  * جدید: ۴ کامپوننت در src/components/modern/
+  * اصلاح: providers.tsx, sidebar.tsx, login/page.tsx, dashboard-charts.tsx, globals.css
+- Build موفق با `npx next build` (هیچ خطای جدیدی نداد)
+- TypeScript type-check تمیز (فقط خطاهای از قبل موجود در dashboard-charts باقی ماند)
+- فایل zip: `/home/z/my-project/download/khbipc-modern-mode.zip` (۲۷KB)
+
+نحوه استفاده:
+1. فایل zip را دانلود و در ریپو extract کنید (مسیرها حفظ شده‌اند)
+2. Push به Git و Vercel به‌طور خودکار rebuild می‌کند
+3. در هدر بالای صفحه، کنار دکمه dark/light، یک دکمه جدید با آیکون ✨ (Sparkles) وجود دارد
+4. روی آن کلیک کنید → حالت مدرن فعال می‌شود:
+   - پس‌زمینه navy تیره با gradient‌های radial
+   - خطوط شناور در پس‌زمینه (به ماوس واکنش نشان می‌دهد)
+   - حاشیه برقی متحرک دور کارت‌های داشبورد
+   - سایدبار با واکنش به نزدیکی ماوس (آیتم‌ها جابه‌جا می‌شوند و رنگ می‌گیرند)
+   - glow روی کارت‌ها و دکمه‌ها
+5. صفحه ورود همیشه با این افکت‌ها نمایش داده می‌شود (اولین مواجهه کاربر)
+

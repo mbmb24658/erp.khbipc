@@ -104,11 +104,13 @@ function formatAmount(n: number): string {
 }
 
 // Helper: compact amount for axis labels (میلیون / میلیارد)
+// Note: String.prototype.toLocaleString in TS doesn't accept locale args,
+// so we convert the toFixed string back to a Number before calling toLocaleString.
 function formatCompact(n: number): string {
   if (!n || isNaN(n)) return "۰";
-  if (n >= 1_000_000_000) return (n / 1_000_000_000).toFixed(1).toLocaleString("fa-IR") + " م.ت";
-  if (n >= 1_000_000) return (n / 1_000_000).toFixed(0).toLocaleString("fa-IR") + " م.م";
-  if (n >= 1_000) return (n / 1_000).toFixed(0).toLocaleString("fa-IR") + " ه.ت";
+  if (n >= 1_000_000_000) return Number((n / 1_000_000_000).toFixed(1)).toLocaleString("fa-IR") + " م.ت";
+  if (n >= 1_000_000) return Number((n / 1_000_000).toFixed(0)).toLocaleString("fa-IR") + " م.م";
+  if (n >= 1_000) return Number((n / 1_000).toFixed(0)).toLocaleString("fa-IR") + " ه.ت";
   return n.toLocaleString("fa-IR");
 }
 

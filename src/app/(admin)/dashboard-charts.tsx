@@ -11,20 +11,22 @@ import {
   Tooltip,
   ResponsiveContainer,
   CartesianGrid,
+  BarChart,
+  Bar,
+  Cell,
 } from "recharts";
 import {
   Network,
   Users,
-  Package,
-  AlertTriangle,
   DollarSign,
+  AlertTriangle,
   TrendingUp,
   Activity as ActivityIcon,
-  CheckCircle2,
-  AlertCircle,
   Clock,
-  Tablet,
   Wrench,
+  AlertCircle,
+  Flame,
+  ShieldAlert,
 } from "lucide-react";
 import { ElectricBorder, ELECTRIC_PRESETS } from "@/components/modern/electric-border";
 import { useModernMode } from "@/components/modern/modern-mode-provider";
@@ -37,8 +39,6 @@ interface Stats {
   personelCount: number;
   assetCount: number;
   openRiskCount: number;
-  activeProjects?: number;
-  totalRevenue?: number;
 }
 
 interface TrendPoint {
@@ -77,6 +77,22 @@ interface PersonnelStat {
   presenceCount: number;
 }
 
+interface StrategicTopic {
+  code: string;       // "1.1"
+  label: string;      // "1.1 - حکمرانی دارایی‌محور"
+  progress: number;
+  scurve: TrendPoint[];
+}
+
+interface RiskStats {
+  total: number;
+  openCount: number;
+  closedCount: number;
+  byType: { name: string; value: number }[];
+  byLevel: { level: string; count: number; color: string }[];
+  heatmap: { impact: string; probability: string; count: number; level: string }[];
+}
+
 export interface DashboardData {
   stats: Stats;
   pms: {
@@ -88,26 +104,45 @@ export interface DashboardData {
     totalCost: number;
     totalRevenue: number;
     costByCategory: TopItem[];
-    revenueByTheme: TopItem[];
+    topAssets: TopItem[]; // پردرآمدترین دارایی‌ها
   };
   recentItems: RecentItem[];
   personnelStats: PersonnelStat[];
+  strategicTopics: StrategicTopic[];
+  risk: RiskStats;
 }
 
 // =================================================================
-// Helpers
+// Helpers — All amounts are stored as "million tomans" in the DB.
+// So a value of 500 means 500 million tomans, 6150 = 6.15 billion tomans.
+// We display:
+//   - values >= 1000  →  (value/1000) + " میلیارد تومان"  (e.g. 6.15 میلیارد تومان)
+//   - values < 1000   →  value + " میلیون تومان"          (e.g. 500 میلیون تومان)
 // =================================================================
-function formatAmount(n: number): string {
-  if (!n || isNaN(n)) return "۰";
-  return Math.round(n).toLocaleString("fa-IR");
+function formatAmount(value: number): string {
+  if (!value || isNaN(value)) return "۰";
+  if (value >= 1000) {
+    const billions = value / 1000;
+    // Show 1 decimal if not whole, else integer
+    const formatted = billions % 1 === 0
+      ? billions.toLocaleString("fa-IR")
+      : billions.toLocaleString("fa-IR", { maximumFractionDigits: 1 });
+    return `${formatted} میلیارد تومان`;
+  }
+  return `${value.toLocaleString("fa-IR")} میلیون تومان`;
 }
 
-function formatCompact(n: number): string {
-  if (!n || isNaN(n)) return "۰";
-  if (n >= 1_000_000_000) return Number((n / 1_000_000_000).toFixed(1)).toLocaleString("fa-IR") + " م.ت";
-  if (n >= 1_000_000) return Number((n / 1_000_000).toFixed(0)).toLocaleString("fa-IR") + " م.م";
-  if (n >= 1_000) return Number((n / 1_000).toFixed(0)).toLocaleString("fa-IR") + " ه.ت";
-  return n.toLocaleString("fa-IR");
+// Compact version for tight spaces (KPI cards)
+function formatAmountCompact(value: number): string {
+  if (!value || isNaN(value)) return "۰";
+  if (value >= 1000) {
+    const billions = value / 1000;
+    const formatted = billions % 1 === 0
+      ? billions.toLocaleString("fa-IR")
+      : billions.toLocaleString("fa-IR", { maximumFractionDigits: 1 });
+    return `${formatted} م.ت`; // میلیارد تومان
+  }
+  return `${value.toLocaleString("fa-IR")} م.م`; // میلیون تومان
 }
 
 function formatDate(iso: string): string {
@@ -139,6 +174,47 @@ const statusMap: Record<string, { label: string; variant: "default" | "secondary
   cancelled: { label: "لغو", variant: "destructive" },
   on_hold: { label: "متوقف", variant: "secondary" },
 };
+
+// Strategic topic labels
+const strategicTopicLabels: Record<string, string> = {
+  "1.1": "۱.۱ - حکمرانی دارایی‌محور",
+  "1.2": "۱.۲ - دارایی‌های داخلی",
+  "1.3": "۱.۳ - دارایی‌های بیرونی",
+  "1.4": "۱.۴ - دارایی‌های دانشی",
+  "1.5": "۱.۵ - پایداری مالی",
+};
+
+const strategicTopicColors: Record<string, string> = {
+  "1.1": "#f43f5e", // rose
+  "1.2": "#f59e0b", // amber
+  "1.3": "#10b981", // emerald
+  "1.4": "#8b5cf6", // violet
+  "1.5": "#3b82f6", // blue
+};
+
+// Risk heatmap helpers
+const impactMap: Record<string, number> = { اساسی: 5, عمده: 4, متوسط: 3, جزئی: 2, ناچیز: 1 };
+const probMap: Record<string, number> = { نادر: 1, بعید: 2, ممکن: 3, محتمل: 4, مکرر: 5 };
+const heatLevel: Record<string, string> = {
+  Low: "bg-emerald-500",
+  Medium: "bg-amber-500",
+  High: "bg-orange-500",
+  Critical: "bg-red-500",
+};
+const impactsOrder = ["اساسی", "عمده", "متوسط", "جزئی", "ناچیز"];
+const probsOrder = ["نادر", "بعید", "ممکن", "محتمل", "مکرر"];
+
+function computeHeatLevel(impact: string, prob: string): string {
+  const i = impactMap[impact];
+  const p = probMap[prob];
+  if (!i || !p) return "Low";
+  // Simple matrix: i*p
+  const score = i * p;
+  if (score >= 16) return "Critical";
+  if (score >= 10) return "High";
+  if (score >= 5) return "Medium";
+  return "Low";
+}
 
 // =================================================================
 // 1) KPI Stat Card
@@ -186,7 +262,8 @@ function StatCard({
 }
 
 // =================================================================
-// 2) TrendChart — AreaChart of revenue trend / S-curve
+// 2) TrendChart — AreaChart of PMS root S-curve
+// Shows both planned AND actual progress
 // =================================================================
 export function TrendChart({ data, title, subtitle }: { data: TrendPoint[]; title: string; subtitle?: string }) {
   const { isModern } = useModernMode();
@@ -196,6 +273,9 @@ export function TrendChart({ data, title, subtitle }: { data: TrendPoint[]; titl
     "واقعی": p.actualPct != null ? Math.round(p.actualPct * 100) : null,
   }));
 
+  // Check if there's any actual data
+  const hasActual = chartData.some((p) => p["واقعی"] != null);
+
   const card = (
     <Card className="h-full">
       <CardHeader>
@@ -204,6 +284,11 @@ export function TrendChart({ data, title, subtitle }: { data: TrendPoint[]; titl
           {title}
         </CardTitle>
         {subtitle && <p className="text-xs text-muted-foreground">{subtitle}</p>}
+        {!hasActual && chartData.length > 0 && (
+          <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">
+            ⚠ هنوز پیشرفت واقعی ثبت نشده است — برای محاسبه، از صفحه PMS روی «محاسبه خودکار پیشرفت برنامه» کلیک کنید
+          </p>
+        )}
       </CardHeader>
       <CardContent>
         {chartData.length === 0 ? (
@@ -251,7 +336,7 @@ export function TrendChart({ data, title, subtitle }: { data: TrendPoint[]; titl
                 stroke="#3b82f6"
                 strokeWidth={2}
                 fill="url(#colorPlan)"
-                name="برنامه"
+                name="پیشرفت برنامه"
               />
               <Area
                 type="monotone"
@@ -259,7 +344,7 @@ export function TrendChart({ data, title, subtitle }: { data: TrendPoint[]; titl
                 stroke="#10b981"
                 strokeWidth={2}
                 fill="url(#colorActual)"
-                name="واقعی"
+                name="پیشرفت واقعی"
                 connectNulls
               />
             </AreaChart>
@@ -278,20 +363,18 @@ export function TrendChart({ data, title, subtitle }: { data: TrendPoint[]; titl
 }
 
 // =================================================================
-// 3) TopItemsList — top 5 by value
+// 3) TopItemsList — top 5 by value (generic, used for assets and costs)
 // =================================================================
 export function TopItemsList({
   items,
   title,
   subtitle,
   emptyLabel,
-  valueFormatter = formatCompact,
 }: {
   items: TopItem[];
   title: string;
   subtitle?: string;
   emptyLabel?: string;
-  valueFormatter?: (n: number) => string;
 }) {
   const { isModern } = useModernMode();
   const top5 = (items || [])
@@ -328,8 +411,8 @@ export function TopItemsList({
                       </span>
                       <span className="text-xs font-medium truncate">{item.name}</span>
                     </div>
-                    <span className="text-xs font-bold font-num shrink-0">
-                      {valueFormatter(item.value || 0)}
+                    <span className="text-xs font-bold font-num shrink-0 text-right">
+                      {formatAmount(item.value || 0)}
                     </span>
                   </div>
                   <Progress value={pct} className="h-1.5" />
@@ -444,7 +527,8 @@ export function RecentTable({ items }: { items: RecentItem[] }) {
 }
 
 // =================================================================
-// 5) PersonnelStatsGrid — avatars + 6 metrics per user
+// 5) PersonnelStatsGrid — only users with login accounts
+// Each card: avatar + 6 metrics
 // =================================================================
 export function PersonnelStatsGrid({ personnel }: { personnel: PersonnelStat[] }) {
   const { isModern } = useModernMode();
@@ -456,13 +540,13 @@ export function PersonnelStatsGrid({ personnel }: { personnel: PersonnelStat[] }
           عملکرد پرسنل
         </CardTitle>
         <p className="text-xs text-muted-foreground">
-          آمار تفصیلی فعالیت، اصلاحی، علت تأخیر و حضور هر کاربر در سامانه
+          آمار تفصیلی کاربران دارای حساب کاربری — فعالیت، اصلاحی، علت تأخیر و حضور در سامانه
         </p>
       </CardHeader>
       <CardContent>
         {personnel.length === 0 ? (
           <div className="p-8 text-center text-sm text-muted-foreground">
-            پرسنلی ثبت نشده است
+            کاربری با حساب کاربری ثبت نشده است
           </div>
         ) : (
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
@@ -471,7 +555,6 @@ export function PersonnelStatsGrid({ personnel }: { personnel: PersonnelStat[] }
                 key={p.id}
                 className="border rounded-xl p-3 bg-card hover:shadow-md transition-shadow space-y-3"
               >
-                {/* Header: avatar + name */}
                 <div className="flex items-center gap-2.5">
                   <Avatar className="w-10 h-10 bg-gradient-to-br from-emerald-500 to-teal-600 text-white ring-2 ring-background">
                     <AvatarFallback className="bg-transparent text-sm font-bold">
@@ -486,7 +569,6 @@ export function PersonnelStatsGrid({ personnel }: { personnel: PersonnelStat[] }
                   </div>
                 </div>
 
-                {/* Metrics grid */}
                 <div className="grid grid-cols-3 gap-1.5">
                   <MetricCell
                     icon={ActivityIcon}
@@ -496,7 +578,7 @@ export function PersonnelStatsGrid({ personnel }: { personnel: PersonnelStat[] }
                   />
                   <MetricCell
                     icon={TrendingUp}
-                    value={Math.round(p.avgProgress)}
+                    value={p.avgProgress}
                     suffix="٪"
                     label="میانگین پیشرفت"
                     color="text-emerald-600"
@@ -542,7 +624,6 @@ export function PersonnelStatsGrid({ personnel }: { personnel: PersonnelStat[] }
   );
 }
 
-// Small metric cell with icon
 function MetricCell({
   icon: Icon,
   value,
@@ -569,14 +650,316 @@ function MetricCell({
 }
 
 // =================================================================
-// Main DashboardCharts component — assembles the new layout
+// 6) StrategicTopicCharts — S-curve per strategic topic (1.1 - 1.5)
+// =================================================================
+export function StrategicTopicCharts({ topics }: { topics: StrategicTopic[] }) {
+  const { isModern } = useModernMode();
+
+  const card = (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base flex items-center gap-2">
+          <Network className="w-4 h-4 text-primary" />
+          روند پیشرفت موضوعات استراتژیک
+        </CardTitle>
+        <p className="text-xs text-muted-foreground">
+          منحنی S پیشرفت برنامه‌ریزی‌شده در برابر واقعی برای هر یک از ۵ موضوع استراتژیک
+        </p>
+      </CardHeader>
+      <CardContent>
+        {topics.length === 0 ? (
+          <div className="p-8 text-center text-sm text-muted-foreground">
+            موضوع استراتژیکی ثبت نشده است
+          </div>
+        ) : (
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {topics.map((topic) => {
+              const color = strategicTopicColors[topic.code] || "#10b981";
+              const chartData = topic.scurve.map((p) => ({
+                name: formatMonth(p.monthDate),
+                برنامه: Math.round((p.plannedPct || 0) * 100),
+                واقعی: p.actualPct != null ? Math.round(p.actualPct * 100) : null,
+              }));
+              return (
+                <div key={topic.code} className="border rounded-lg p-3 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span
+                        className="w-3 h-3 rounded-full shrink-0"
+                        style={{ background: color }}
+                      />
+                      <span className="text-xs font-semibold truncate">
+                        {strategicTopicLabels[topic.code] || topic.label}
+                      </span>
+                    </div>
+                    <span className="text-xs font-bold font-num shrink-0" style={{ color }}>
+                      {Math.round((topic.progress || 0) * 100).toLocaleString("fa-IR")}٪
+                    </span>
+                  </div>
+                  {chartData.length === 0 ? (
+                    <div className="h-32 flex items-center justify-center text-[11px] text-muted-foreground">
+                      داده‌ای ثبت نشده
+                    </div>
+                  ) : (
+                    <ResponsiveContainer width="100%" height={140}>
+                      <AreaChart data={chartData} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
+                        <defs>
+                          <linearGradient id={`grad-plan-${topic.code}`} x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor={color} stopOpacity={0.3} />
+                            <stop offset="95%" stopColor={color} stopOpacity={0.05} />
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.5 0 0 / 0.08)" />
+                        <XAxis
+                          dataKey="name"
+                          tick={{ fontSize: 9, fontFamily: "Vazirmatn" }}
+                          stroke="oklch(0.5 0 0 / 0.3)"
+                          interval="preserveStartEnd"
+                        />
+                        <YAxis
+                          tick={{ fontSize: 9, fontFamily: "Vazirmatn" }}
+                          stroke="oklch(0.5 0 0 / 0.3)"
+                          tickFormatter={(v) => `${v}%`}
+                          width={28}
+                        />
+                        <Tooltip
+                          contentStyle={{
+                            background: "var(--popover)",
+                            border: "1px solid var(--border)",
+                            borderRadius: "6px",
+                            fontSize: "10px",
+                            fontFamily: "Vazirmatn",
+                          }}
+                          formatter={(value: any) => (value == null ? "—" : `${value}%`)}
+                        />
+                        <Area
+                          type="monotone"
+                          dataKey="برنامه"
+                          stroke={color}
+                          strokeWidth={1.5}
+                          fill={`url(#grad-plan-${topic.code})`}
+                          name="برنامه"
+                        />
+                        <Area
+                          type="monotone"
+                          dataKey="واقعی"
+                          stroke="#10b981"
+                          strokeWidth={1.5}
+                          fill="transparent"
+                          name="واقعی"
+                          connectNulls
+                        />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+
+  if (!isModern) return card;
+  return (
+    <ElectricBorder enabled {...ELECTRIC_PRESETS.project}>
+      {card}
+    </ElectricBorder>
+  );
+}
+
+// =================================================================
+// 7) RiskCharts — risk overview + heatmap
+// =================================================================
+export function RiskCharts({ risk }: { risk: RiskStats }) {
+  const { isModern } = useModernMode();
+
+  // Build 5x5 heatmap matrix from risk.heatmap array
+  // Each cell: { impact, probability, count, level }
+  const matrix: { count: number; level: string }[][] = [];
+  for (let i = 0; i < 5; i++) {
+    matrix.push([]);
+    for (let j = 0; j < 5; j++) matrix[i].push({ count: 0, level: "Low" });
+  }
+  for (const cell of risk.heatmap || []) {
+    const iIdx = impactMap[cell.impact];
+    const pIdx = probMap[cell.probability];
+    if (!iIdx || !pIdx) continue;
+    const row = 5 - iIdx; // impact 5 (اساسی) → row 0 (top)
+    const col = pIdx - 1; // prob 1 (نادر) → col 0 (left)
+    if (row >= 0 && row < 5 && col >= 0 && col < 5) {
+      matrix[row][col].count += cell.count;
+      matrix[row][col].level = cell.level || computeHeatLevel(cell.impact, cell.probability);
+    }
+  }
+
+  const byTypeData = (risk.byType || []).map((t) => ({
+    name: t.name,
+    تعداد: t.value,
+  }));
+
+  const card = (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base flex items-center gap-2">
+          <AlertTriangle className="w-4 h-4 text-primary" />
+          وضعیت ریسک و نقشه حرارتی
+        </CardTitle>
+        <p className="text-xs text-muted-foreground">
+          توزیع ریسک‌ها بر اساس نوع، سطح و ماتریس ۵×۵ احتمال-اثر
+        </p>
+      </CardHeader>
+      <CardContent>
+        {/* Top: 4 stat cards */}
+        <div className="grid gap-3 grid-cols-2 sm:grid-cols-4 mb-4">
+          <div className="bg-muted/40 rounded-lg p-3 text-center">
+            <p className="text-lg font-bold font-num">{(risk.total || 0).toLocaleString("fa-IR")}</p>
+            <p className="text-[10px] text-muted-foreground">کل ریسک‌ها</p>
+          </div>
+          <div className="bg-amber-50 dark:bg-amber-950/20 rounded-lg p-3 text-center">
+            <p className="text-lg font-bold font-num text-amber-600">
+              {(risk.openCount || 0).toLocaleString("fa-IR")}
+            </p>
+            <p className="text-[10px] text-muted-foreground">ریسک‌های باز</p>
+          </div>
+          <div className="bg-emerald-50 dark:bg-emerald-950/20 rounded-lg p-3 text-center">
+            <p className="text-lg font-bold font-num text-emerald-600">
+              {(risk.closedCount || 0).toLocaleString("fa-IR")}
+            </p>
+            <p className="text-[10px] text-muted-foreground">ریسک‌های بسته</p>
+          </div>
+          <div className="bg-rose-50 dark:bg-rose-950/20 rounded-lg p-3 text-center">
+            <p className="text-lg font-bold font-num text-rose-600">
+              {((risk.byLevel || []).find((l) => l.level === "Critical")?.count || 0).toLocaleString("fa-IR")}
+            </p>
+            <p className="text-[10px] text-muted-foreground">بحرانی</p>
+          </div>
+        </div>
+
+        <div className="grid gap-4 lg:grid-cols-2">
+          {/* Left: bar chart of risk by type */}
+          <div>
+            <p className="text-xs font-semibold mb-2 text-muted-foreground">توزیع بر اساس نوع</p>
+            {byTypeData.length === 0 ? (
+              <div className="h-48 flex items-center justify-center text-xs text-muted-foreground">
+                داده‌ای موجود نیست
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height={200}>
+                <BarChart data={byTypeData} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.5 0 0 / 0.08)" />
+                  <XAxis
+                    dataKey="name"
+                    tick={{ fontSize: 10, fontFamily: "Vazirmatn" }}
+                    stroke="oklch(0.5 0 0 / 0.4)"
+                  />
+                  <YAxis
+                    tick={{ fontSize: 10, fontFamily: "Vazirmatn" }}
+                    stroke="oklch(0.5 0 0 / 0.4)"
+                    width={28}
+                  />
+                  <Tooltip
+                    contentStyle={{
+                      background: "var(--popover)",
+                      border: "1px solid var(--border)",
+                      borderRadius: "6px",
+                      fontSize: "11px",
+                      fontFamily: "Vazirmatn",
+                    }}
+                  />
+                  <Bar dataKey="تعداد" radius={[4, 4, 0, 0]}>
+                    {byTypeData.map((_, idx) => (
+                      <Cell key={idx} fill={idx % 2 === 0 ? "#f43f5e" : "#8b5cf6"} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+          </div>
+
+          {/* Right: heatmap */}
+          <div>
+            <p className="text-xs font-semibold mb-2 text-muted-foreground">
+              نقشه حرارتی (احتمال × اثر)
+            </p>
+            <div className="overflow-x-auto">
+              <table className="w-full text-[10px]">
+                <thead>
+                  <tr>
+                    <th className="p-1 text-muted-foreground"></th>
+                    {probsOrder.map((p) => (
+                      <th key={p} className="p-1 text-center font-medium text-muted-foreground">
+                        {p}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {impactsOrder.map((imp, rowIdx) => (
+                    <tr key={imp}>
+                      <td className="p-1 text-left font-medium text-muted-foreground whitespace-nowrap">
+                        {imp}
+                      </td>
+                      {probsOrder.map((prob, colIdx) => {
+                        const cell = matrix[rowIdx][colIdx];
+                        const bg = heatLevel[cell.level] || "bg-muted";
+                        return (
+                          <td key={prob} className="p-0.5">
+                            <div
+                              className={`${bg} rounded text-white text-center font-bold font-num h-8 flex items-center justify-center ${
+                                cell.count > 0 ? "" : "opacity-30"
+                              }`}
+                            >
+                              {cell.count > 0 ? cell.count.toLocaleString("fa-IR") : "—"}
+                            </div>
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="flex items-center justify-center gap-3 mt-3 text-[10px] text-muted-foreground flex-wrap">
+              <span className="flex items-center gap-1">
+                <span className="w-2.5 h-2.5 rounded-sm bg-emerald-500"></span> پایین
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="w-2.5 h-2.5 rounded-sm bg-amber-500"></span> متوسط
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="w-2.5 h-2.5 rounded-sm bg-orange-500"></span> زیاد
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="w-2.5 h-2.5 rounded-sm bg-red-500"></span> بحرانی
+              </span>
+            </div>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+
+  if (!isModern) return card;
+  return (
+    <ElectricBorder enabled {...ELECTRIC_PRESETS.kpi}>
+      {card}
+    </ElectricBorder>
+  );
+}
+
+// =================================================================
+// Main DashboardCharts — new layout
 // =================================================================
 export function DashboardCharts({ data }: { data: DashboardData }) {
   const stats = data?.stats || { wbsCount: 0, personelCount: 0, assetCount: 0, openRiskCount: 0 };
   const pms = data?.pms || { rootScurve: [], rootProgress: 0, rootPlan: 0 };
-  const financial = data?.financial || { totalCost: 0, totalRevenue: 0, costByCategory: [], revenueByTheme: [] };
+  const financial = data?.financial || { totalCost: 0, totalRevenue: 0, costByCategory: [], topAssets: [] };
   const recentItems = data?.recentItems || [];
   const personnelStats = data?.personnelStats || [];
+  const strategicTopics = data?.strategicTopics || [];
+  const risk = data?.risk || { total: 0, openCount: 0, closedCount: 0, byType: [], byLevel: [], heatmap: [] };
 
   return (
     <div className="space-y-6">
@@ -584,11 +967,11 @@ export function DashboardCharts({ data }: { data: DashboardData }) {
       <div>
         <h1 className="text-2xl font-bold">داشبورد</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          نمای کلی عملکرد سازمان — فعالیت‌ها، مالی، پرسنل و آخرین به‌روزرسانی‌ها
+          نمای کلی عملکرد سازمان — فعالیت‌ها، مالی، پرسنل، موضوعات استراتژیک و ریسک
         </p>
       </div>
 
-      {/* ===== Row 1: 4 KPI Cards ===== */}
+      {/* ===== Row 2: 4 KPI Cards ===== */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
           label="تعداد پرسنل"
@@ -606,10 +989,11 @@ export function DashboardCharts({ data }: { data: DashboardData }) {
         />
         <StatCard
           label="درآمد کل (پیش‌بینی برنامه‌ای)"
-          value={formatCompact(financial.totalRevenue || 0)}
+          value={formatAmountCompact(financial.totalRevenue || 0)}
           icon={DollarSign}
           color="bg-gradient-to-br from-amber-500 to-orange-600"
           preset="financial"
+          suffix={financial.totalRevenue >= 1000 ? "(میلیارد تومان)" : "(میلیون تومان)"}
         />
         <StatCard
           label="ریسک‌های باز"
@@ -620,7 +1004,7 @@ export function DashboardCharts({ data }: { data: DashboardData }) {
         />
       </div>
 
-      {/* ===== Row 2: Trend chart (2/3) + Top items (1/3) ===== */}
+      {/* ===== Row 3: Trend chart (2/3) + Top revenue assets (1/3) ===== */}
       <div className="grid gap-4 lg:grid-cols-3">
         <div className="lg:col-span-2">
           <TrendChart
@@ -631,19 +1015,24 @@ export function DashboardCharts({ data }: { data: DashboardData }) {
         </div>
         <div className="lg:col-span-1">
           <TopItemsList
-            items={financial.costByCategory}
-            title="پرهزینه‌ترین دسته‌ها"
-            subtitle="۵ دسته برتر بر اساس پیش‌بینی برنامه‌ای"
-            emptyLabel="هزینه‌ای ثبت نشده است"
-            valueFormatter={formatCompact}
+            items={financial.topAssets}
+            title="پردرآمدترین دارایی‌ها"
+            subtitle="۵ دارایی برتر بر اساس درآمد پیش‌بینی‌شده"
+            emptyLabel="دارایی‌ای با درآمد ثبت نشده است"
           />
         </div>
       </div>
 
-      {/* ===== Row 3: Personnel performance grid ===== */}
+      {/* ===== Row 4: Personnel performance ===== */}
       <PersonnelStatsGrid personnel={personnelStats} />
 
-      {/* ===== Row 4: Recent activities table ===== */}
+      {/* ===== Row 5: Strategic topic S-curves ===== */}
+      <StrategicTopicCharts topics={strategicTopics} />
+
+      {/* ===== Row 6: Risk charts + heatmap ===== */}
+      <RiskCharts risk={risk} />
+
+      {/* ===== Row 7: Recent activities table ===== */}
       <RecentTable items={recentItems} />
     </div>
   );

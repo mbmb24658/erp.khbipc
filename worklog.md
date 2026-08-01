@@ -158,3 +158,68 @@ Stage Summary:
 - compact amount: م.ت (میلیارد)، م.م (میلیون)، ه.ت (هزار تومان)
 
 
+---
+Task ID: 4
+Agent: main
+Task: اصلاحات داشبورد: پردرآمدترین دارایی‌ها + واحد پولی + پرسنل + خارج از چارت + موضوعات استراتژیک + ریسک HeatMap
+
+Work Log:
+- اصلاح واحد پولی در `dashboard-charts.tsx`:
+  * مبالغ در دیتابیس به «میلیون تومان» ذخیره می‌شوند (نه هزار تومان)
+  * مثال: 500 = 500 میلیون تومان، 6150 = 6.15 میلیارد تومان
+  * تابع `formatAmount`: مقدار >= 1000 → «X میلیارد تومان»، مقدار < 1000 → «X میلیون تومان»
+  * تابع `formatAmountCompact`: «م.ت» (میلیارد) یا «م.م» (میلیون)
+  * نمایش suffix روی کارت درآمد کل: «(میلیارد تومان)» یا «(میلیون تومان)»
+- جایگزینی «پرهزینه‌ترین دسته‌ها» با «پردرآمدترین دارایی‌ها»:
+  * کوئری جدید: `RevenueBreakdown.findMany` با JOIN روی Asset
+  * تجمیع درآمد هر دارایی (actualRevenue + programForecast)
+  * مرتب‌سازی نزولی و گرفتن ۱۰ مورد برتر
+- اصلاح کوئری پرسنل:
+  * فیلتر `where: { user: { isNot: null } }` — فقط پرسنل دارای حساب کاربری
+  * شامل فعالیت‌های Activity (از activityAssignments) + فعالیت‌های PMS (از WBS با hrActual)
+  * کوئری جداگانه برای WBSهای سطح ۴ که personelId در hrActual است
+- اصلاح محاسبه «خارج از چارت»:
+  * فعالیت‌های Activity: user در hrActual است ولی orgChartId در hrPlan نیست
+  * فعالیت‌های PMS: user در hrActual است ولی orgChartId در hrPlan نیست
+  * استفاده از `parseIdArray` برای parse کردن JSON array
+- اصلاح میانگین پیشرفت:
+  * progressPct در Activity و progressActual در WBS هر دو ۰-۱ ذخیره می‌شوند
+  * فرمول صحیح: `(sum / count) * 100` (نه `sum * 100 / count`)
+  * محاسبه میانگین وزنی Activity + PMS با هم
+- اصلاح شمارش فعالیت‌های PMS:
+  * کوئری WBS با `level >= 4` و بررسی `hrActual` شامل personelId
+  * شمارش موارد با `status === "on_hold"` به عنوان تأخیر (WBS فیلد delayCauseId ندارد)
+  * `isCorrective` فقط برای Activity موجود است (روی WBS صفر)
+- اضافه شدن چارت‌های موضوعات استراتژیک (StrategicTopicCharts):
+  * کوئری WBS سطح ۲ با monthlyProgress
+  * فیلتر بر اساس strategicTopic (1.1 - 1.5)
+  * نمایش ۵ کارت کوچک با AreaChart برای هر موضوع
+  * نمایش «برنامه» و «واقعی» با رنگ‌های متمایز
+  * عنوان فارسی: «۱.۱ - حکمرانی دارایی‌محور» و ...
+- اضافه شدن چارت ریسک + HeatMap (RiskCharts):
+  * کوئری RiskEvaluation + Risk
+  * ساخت latestEvalByRisk map
+  * محاسبه byType، byLevel، heatmap (5×5 matrix)
+  * نمایش ۴ کارت آماری: کل، باز، بسته، بحرانی
+  * BarChart توزیع بر اساس نوع
+  * HeatMap 5×5 با رنگ‌های emerald/amber/orange/red
+  * Legend با ۴ سطح: پایین، متوسط، زیاد، بحرانی
+- هشدار در TrendChart اگر actualPct خالی است:
+  * پیام: «هنوز پیشرفت واقعی ثبت نشده است — برای محاسبه، از صفحه PMS روی «محاسبه خودکار پیشرفت برنامه» کلیک کنید»
+
+Stage Summary:
+- ۲ فایل اصلاح شد: page.tsx، dashboard-charts.tsx
+- Build موفق با `npx next build`
+- TypeScript type-check تمیز (فقط خطاهای از قبل موجود در notifications)
+- فایل zip: `/home/z/my-project/download/khbipc-dashboard-v3.zip`
+
+ساختار نهایی داشبورد:
+  ردیف ۱: هدر + ۴ کارت KPI (پرسنل، PMS، درآمد کل با واحد صحیح، ریسک‌های باز)
+  ردیف ۲: TrendChart (2/3) + TopAssetsList پردرآمدترین دارایی‌ها (1/3)
+  ردیف ۳: PersonnelStatsGrid (فقط کاربران دارای حساب، شامل PMS)
+  ردیف ۴: StrategicTopicCharts (۵ نمودار برای موضوعات ۱.۱ تا ۱.۵)
+  ردیف ۵: RiskCharts (آمار + BarChart نوع + HeatMap 5×5)
+  ردیف ۶: RecentTable (جدول ۱۰ فعالیت آخر)
+
+
+

@@ -222,4 +222,78 @@ Stage Summary:
   ردیف ۶: RecentTable (جدول ۱۰ فعالیت آخر)
 
 
+---
+Task ID: 5
+Agent: main
+Task: ارتقای جامع رابط کاربری به فضای کاری enterprise (Linear/Vercel/Notion style)
+
+Work Log:
+- افزودن design tokens کامل به `src/app/globals.css`:
+  * ۷ status color sets (overdue, current, corrective, pms, pending, completed, onhold)
+  * هر status شامل: color, bg, border (light + dark)
+  * ۵ سطح elevation با shadow لایه‌ای (light + dark)
+  * surface hierarchy (background → card → popover)
+  * motion tokens (ease-out-soft, durations)
+  * ActivityCard variant classes (7 variants با gradient background + border accent)
+  * Progress bar color variants (low/medium/high)
+  * Status badge classes (badge-overdue, badge-current, ...)
+  * Page transition animation (fade + slide-up)
+  * Stagger children animation (8 children با delay 40ms)
+  * Skeleton shimmer enhancement
+  * FAB (Floating Action Button) class
+  * Micro-interactions (button press scale, toast slide-in)
+  * Gauge ring animation
+  * Surface tint utilities
+  * Enhanced focus visible
+  * Reduced motion overrides
+- ساخت کامپوننت `src/components/activity-card.tsx`:
+  * ۷ variant: overdue, current, corrective, pms, pending, completed, onhold
+  * هر variant: آیکون، badge، رنگ حاشیه، tinted background
+  * Progress bar با رنگ پویا (0-50% قرمز، 50-80% کهربایی، >80% سبز)
+  * detectVariant() function برای تشخیص خودکار variant از status + dueDate
+  * StatusBadge component
+- ساخت کامپوننت `src/components/command-palette.tsx`:
+  * باز شدن با Cmd+K (Mac) یا Ctrl+K (Windows/Linux)
+  * باز شدن با "/" (وقتی در input نیست)
+  * ۲۰ آیتم ناوبری در ۶ گروه (اصلی، مدیریت پروژه، منابع انسانی، مالی، ریسک، سیستم)
+  * Fuzzy search با keywords فارسی + انگلیسی
+  * Quick actions (فعالیت جدید، ساختار WBS)
+  * Floating search button در گوشه پایین-چپ
+- ساخت کامپوننت `src/components/page-transition.tsx`:
+  * PageTransition: fade + slide-up با framer-motion (250ms, ease-out-soft)
+  * StaggerGroup + StaggerItem: برای staggering children در لیست‌ها
+  * CardHover: scale + shadow روی hover
+- به‌روزرسانی `src/app/(admin)/layout.tsx`:
+  * افزودن <CommandPalette /> به layout
+- به‌روزرسانی `src/app/(admin)/dashboard-charts.tsx`:
+  * تمام Cardها: افزودن `elevated-card surface-tint-1`
+  * KPI grid: افزودن `stagger-children` برای انیمیشن ورود
+- به‌روزرسانی `src/app/(admin)/user-dashboard.tsx`:
+  * ActivityCard محلی: استفاده از `activity-card activity-card--{variant}`
+  * تشخیص variant از status + isCorrective + overdue
+  * Progress bar با progress-track-low/medium/high
+  * Badge overdue با badge-overdue class
+  * رنگ تاریخ overdue با var(--status-overdue)
+
+Stage Summary:
+- ۶ فایل ایجاد/اصلاح شد:
+  * جدید: activity-card.tsx, command-palette.tsx, page-transition.tsx
+  * اصلاح: globals.css, (admin)/layout.tsx, (admin)/dashboard-charts.tsx, (admin)/user-dashboard.tsx
+- Build موفق با `npx next build`
+- TypeScript type-check تمیز
+- فایل zip: `/home/z/my-project/download/khbipc-enterprise-ui.zip`
+
+نواحی ارتقا:
+1. **Design Tokens**: ۷ وضعیت semantic با رنگ‌های ملایم، ۵ سطح elevation، motion tokens
+2. **ActivityCard**: ۷ variant متمایز (overdue/current/corrective/pms/pending/completed/onhold)
+3. **Command Palette**: Cmd+K با ۲۰ آیتم ناوبری + fuzzy search فارسی/انگلیسی
+4. **Page Transitions**: fade + slide-up با framer-motion
+5. **Stagger Animations**: ورود پلکانی کارت‌ها
+6. **Progress Bar Colors**: پویا بر اساس مقدار (قرمز/کهربایی/سبز)
+7. **Elevated Cards**: surface tint + elevation 1 → 3 روی hover
+8. **Micro-interactions**: button press scale, toast slide-in
+9. **Accessibility**: focus visible بهبودیافته، reduced motion support
+
+
+
 

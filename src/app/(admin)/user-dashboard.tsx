@@ -361,14 +361,37 @@ function ActivityCard({
   const ss = statusMap[activity.status] || { label: activity.status, variant: "secondary" as const };
   const isPms = activity.type === "pms";
   const href = isPms ? `/wbs/${activity.id}` : `/activities/${activity.id}`;
+
+  // Determine variant for the new activity-card class system
+  let variant = "pending";
+  if (activity.isCorrective) {
+    variant = "corrective";
+  } else if (overdue) {
+    variant = "overdue";
+  } else if (activity.status === "completed") {
+    variant = "completed";
+  } else if (activity.status === "on_hold") {
+    variant = "onhold";
+  } else if (activity.status === "in_progress") {
+    variant = "current";
+  } else if (isPms) {
+    variant = "pms";
+  }
+
+  // Progress bar color based on value
+  const progressClass =
+    activity.progressPct < 50 ? "progress-track-low" :
+    activity.progressPct < 80 ? "progress-track-medium" :
+    "progress-track-high";
+
   return (
     <Link
       href={href}
-      className="block rounded-lg border p-3 hover:shadow-md hover:border-primary/40 transition-all relative"
+      className={`block activity-card activity-card--${variant} p-3 relative`}
     >
       {hasUnreadNotif && (
         <span
-          className="absolute -top-1 -left-1 w-3 h-3 bg-red-500 rounded-full ring-2 ring-background"
+          className="absolute -top-1 -left-1 w-3 h-3 bg-red-500 rounded-full ring-2 ring-background z-10"
           title="اعلان جدید"
           aria-label="اعلان جدید"
         />
@@ -393,15 +416,17 @@ function ActivityCard({
           <span className="text-muted-foreground">پیشرفت</span>
           <span className="font-num font-medium">{Math.round(activity.progressPct).toLocaleString("fa-IR")}%</span>
         </div>
-        <Progress value={activity.progressPct} className="h-1.5" />
+        <Progress value={activity.progressPct} className={`h-1.5 ${progressClass}`} />
       </div>
       <div className="flex items-center gap-1 text-xs text-muted-foreground">
         <Calendar className="w-3 h-3" />
         <span>{formatJalali(activity.startDate)}</span>
         <span>تا</span>
-        <span className={overdue ? "text-red-600 font-medium" : ""}>{formatJalali(activity.endDate)}</span>
+        <span className={overdue ? "font-medium" : ""} style={overdue ? { color: "var(--status-overdue)" } : undefined}>
+          {formatJalali(activity.endDate)}
+        </span>
         {overdue && (
-          <Badge variant="destructive" className="text-[10px] mr-1 px-1 py-0">عقب‌افتاده</Badge>
+          <Badge className="text-[10px] mr-1 px-1 py-0 badge-overdue">عقب‌افتاده</Badge>
         )}
       </div>
     </Link>

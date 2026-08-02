@@ -1,16 +1,17 @@
-// Kharazmi Bandar-e-Imam Company - Integrated Management & Monitoring System
-// Based on back.json + db.json specifications
-
 generator client {
   provider = "prisma-client-js"
 }
+
+//datasource db {
+//  provider = "sqlite"
+//  url      = env("DATABASE_URL")
+//}
 
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
   directUrl = env("DIRECT_URL")
 }
-
 // ============================================================
 // MODULE 01 - WBS (Work Breakdown Structure) — Core
 // ============================================================

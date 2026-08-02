@@ -236,7 +236,7 @@ function StatCard({
 }) {
   const { isModern } = useModernMode();
   const card = (
-    <Card>
+    <Card className="elevated-card surface-tint-1">
       <CardContent className="p-4">
         <div className="flex items-center gap-3">
           <div className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 shadow-sm ${color}`}>
@@ -277,7 +277,7 @@ export function TrendChart({ data, title, subtitle }: { data: TrendPoint[]; titl
   const hasActual = chartData.some((p) => p["واقعی"] != null);
 
   const card = (
-    <Card className="h-full">
+    <Card className="h-full elevated-card surface-tint-1">
       <CardHeader>
         <CardTitle className="text-base flex items-center gap-2">
           <TrendingUp className="w-4 h-4 text-primary" />
@@ -385,7 +385,7 @@ export function TopItemsList({
   const max = top5.length > 0 ? Math.max(...top5.map((i) => i.value || 0)) : 0;
 
   const card = (
-    <Card className="h-full">
+    <Card className="h-full elevated-card surface-tint-1">
       <CardHeader>
         <CardTitle className="text-base flex items-center gap-2">
           <DollarSign className="w-4 h-4 text-primary" />
@@ -439,7 +439,7 @@ export function TopItemsList({
 export function RecentTable({ items }: { items: RecentItem[] }) {
   const { isModern } = useModernMode();
   const card = (
-    <Card>
+    <Card className="elevated-card surface-tint-1">
       <CardHeader>
         <CardTitle className="text-base flex items-center gap-2">
           <ActivityIcon className="w-4 h-4 text-primary" />
@@ -533,7 +533,7 @@ export function RecentTable({ items }: { items: RecentItem[] }) {
 export function PersonnelStatsGrid({ personnel }: { personnel: PersonnelStat[] }) {
   const { isModern } = useModernMode();
   const card = (
-    <Card>
+    <Card className="elevated-card surface-tint-1">
       <CardHeader>
         <CardTitle className="text-base flex items-center gap-2">
           <Users className="w-4 h-4 text-primary" />
@@ -656,7 +656,7 @@ export function StrategicTopicCharts({ topics }: { topics: StrategicTopic[] }) {
   const { isModern } = useModernMode();
 
   const card = (
-    <Card>
+    <Card className="elevated-card surface-tint-1">
       <CardHeader>
         <CardTitle className="text-base flex items-center gap-2">
           <Network className="w-4 h-4 text-primary" />
@@ -800,7 +800,7 @@ export function RiskCharts({ risk }: { risk: RiskStats }) {
   }));
 
   const card = (
-    <Card>
+    <Card className="elevated-card surface-tint-1">
       <CardHeader>
         <CardTitle className="text-base flex items-center gap-2">
           <AlertTriangle className="w-4 h-4 text-primary" />
@@ -972,7 +972,7 @@ export function DashboardCharts({ data }: { data: DashboardData }) {
       </div>
 
       {/* ===== Row 2: 4 KPI Cards ===== */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 stagger-children">
         <StatCard
           label="تعداد پرسنل"
           value={stats.personelCount.toLocaleString("fa-IR")}

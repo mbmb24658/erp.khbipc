@@ -31,11 +31,13 @@ import {
   Briefcase,
   FileBarChart,
   UserCircle,
+  Calendar,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useModernMode } from "@/components/modern/modern-mode-provider";
 import { LineSidebar as LineSidebarModern } from "@/components/modern/line-sidebar";
 import { FloatingLines } from "@/components/modern/floating-lines";
+import { getTodayJalaliLong } from "@/lib/actual-progress-distribution";
 
 const navItems = [
   { href: "/", label: "داشبورد", icon: LayoutDashboard, exact: true, roles: ["admin", "moderator", "user"] },
@@ -349,6 +351,13 @@ function UserCard() {
 export function SidebarWrapper({ children }: { children: React.ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const { isModern } = useModernMode();
+  const [todayLabel, setTodayLabel] = useState<string>("");
+
+  // Compute today's Jalali label on the client (avoids SSR mismatch)
+  useEffect(() => {
+    setTodayLabel(getTodayJalaliLong());
+  }, []);
+
   return (
     <div className="min-h-screen flex bg-background relative">
       {/* FloatingLines background — only visible in modern mode (CSS-controlled) */}
@@ -406,6 +415,15 @@ export function SidebarWrapper({ children }: { children: React.ReactNode }) {
               )}
             </h1>
           </div>
+
+          {/* Today's Jalali date */}
+          {todayLabel && (
+            <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-muted/50 border text-xs">
+              <Calendar className="w-3.5 h-3.5 text-primary" />
+              <span className="font-medium">{todayLabel}</span>
+            </div>
+          )}
+
           <ThemeToggle />
           <Button
             size="sm"

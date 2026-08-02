@@ -295,5 +295,73 @@ Stage Summary:
 9. **Accessibility**: focus visible بهبودیافته، reduced motion support
 
 
+---
+Task ID: 6
+Agent: main
+Task: اصلاحات داشبورد: هزینه/درآمد، توزیع پیشرفت واقعی، کاربران به جای پرسنل، فیلتر جداول، وسط‌چین، تاریخ شمسی
+
+Work Log:
+- ساخت `src/lib/actual-progress-distribution.ts`:
+  * تابع `distributeActualProgress(planned, currentOverallActual)`:
+    - نقطه امروز را به عنوان anchor قرار می‌دهد: (today, currentProgress)
+    - از امروز تا مبدا (ماه اول) به صورت ماهانه نقاط قرار می‌دهد
+    - در هر نقطه، پیشرفت واقعی = currentProgress × (روزهای گذشته از مبدا تا این ماه / روزهای گذشته از مبدا تا امروز)
+    - نقاط بعد از امروز: null (آینده)
+    - اگر actualPct واقعی موجود باشد، حفظ می‌شود
+  * تابع `buildSyntheticActualCurve(startDate, endDate, currentOverallActual)`:
+    - وقتی planned S-curve موجود نیست، یک محور ماهانه مصنوعی می‌سازد
+  * تابع `getTodayJalaliLong()`:
+    - تاریخ امروز به شمسی با روز هفته: «یکشنبه ۱۲ مرداد ۱۴۰۴»
+
+- اصلاحات داشبورد در `src/app/(admin)/page.tsx`:
+  * کوئری `db.user.count()` به جای `db.personel.count()` — تعداد کاربران دارای حساب
+  * اعمال `distributeActualProgress` روی rootScurve با rootWbs.progressActual
+  * اعمال `distributeActualProgress` روی هر یک از موضوعات استراتژیک (1.1 - 1.5)
+  * متغیر `strategicTopicsDistributed` برای استفاده در return
+
+- اصلاحات داشبورد در `src/app/(admin)/dashboard-charts.tsx`:
+  * حذف کارت «پروژه‌های فعال (PMS)»
+  * افزودن کارت «هزینه کل (پیش‌بینی برنامه‌ای)» با رنگ rose/red
+  * تغییر برچسب «تعداد پرسنل» به «تعداد کاربران»
+  * نمایش هر دو: هزینه + درآمد (در کنار هم)
+  * افزودن تاریخ شمسی امروز به هدر داشبورد
+  * RecentTable: افزودن فیلتر بر اساس ستون‌ها (جستجو + نوع + وضعیت)
+  * RecentTable: وسط‌چین کردن همه‌ی ستون‌ها و مقادیر
+  * افزودن import: useState, Input, Button, Search, Calendar
+
+- به‌روزرسانی `src/components/s-curve-chart.tsx`:
+  * استفاده از `distributeActualProgress` به جای logic داخلی
+  * همه‌ی S-curve های برنامه (داشبورد، گزارش‌ها، و غیره) حالا از همان الگوریتم توزیع استفاده می‌کنند
+
+- به‌روزرسانی `src/components/data-table.tsx`:
+  * افزودن قابلیت `filterable` به Column interface
+  * افزودن dropdown فیلتر برای هر ستون filterable
+  * محاسبه خودکار مقادیر یکتا برای هر ستون
+  * دکمه «پاک کردن فیلترها»
+  * وسط‌چین کردن همه‌ی ستون‌ها و مقادیر به صورت پیش‌فرض (center: true)
+  * امکان غیرفعال کردن وسط‌چین با `center: false`
+
+- به‌روزرسانی `src/components/sidebar.tsx`:
+  * افزودن تاریخ شمسی امروز به هدر بالا (sticky header)
+  * محاسبه روی client با useEffect (جلوگیری از SSR mismatch)
+  * import: Calendar, getTodayJalaliLong
+
+Stage Summary:
+- ۵ فایل اصلاح شد:
+  * جدید: src/lib/actual-progress-distribution.ts
+  * اصلاح: page.tsx, dashboard-charts.tsx, s-curve-chart.tsx, data-table.tsx, sidebar.tsx
+- Build موفق با `npx next build`
+- TypeScript type-check تمیز
+
+تغییرات کلیدی:
+1. **توزیع پیشرفت واقعی**: الگوریتم توزیع درصد فعلی روی محور زمان (ماهانه) تا مبدا
+2. **هزینه + درآمد**: هر دو کارت در داشبورد
+3. **کاربران به جای پرسنل**: شمارش از User model
+4. **فیلتر ستون‌ها**: dropdown برای هر ستون filterable در DataTable
+5. **وسط‌چین**: همه‌ی جداول (داخل DataTable و RecentTable)
+6. **تاریخ شمسی**: در هدر بالا (sticky) + در هدر داشبورد
+
+
+
 
 

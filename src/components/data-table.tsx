@@ -11,7 +11,14 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Search, Plus, Pencil, Trash2, Eye, ArrowRight, ArrowLeft } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Search, Plus, Pencil, Trash2, Eye, ArrowRight, ArrowLeft, Filter, X } from "lucide-react";
 import { useState, useMemo, ReactNode } from "react";
 
 export interface Column<T> {
@@ -20,6 +27,12 @@ export interface Column<T> {
   render?: (row: T) => ReactNode;
   sortable?: boolean;
   className?: string;
+  // Enable per-column filter (dropdown of unique values)
+  filterable?: boolean;
+  // Custom filter options (defaults to unique values from data)
+  filterOptions?: (row: T) => string;
+  // Center-align this column (default: true for all columns now)
+  center?: boolean;
 }
 
 interface DataTableProps<T> {
@@ -53,21 +66,80 @@ export function DataTable<T extends { id?: string }>({
 }: DataTableProps<T>) {
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(0);
+  // Per-column filter values: { columnKey: selectedValue }
+  const [columnFilters, setColumnFilters] = useState<Record<string, string>>({});
+
+  // Compute unique values for each filterable column
+  const filterOptions = useMemo(() => {
+    const opts: Record<string, string[]> = {};
+    for (const col of columns) {
+      if (!col.filterable) continue;
+      const set = new Set<string>();
+      for (const row of data) {
+        const val = col.filterOptions
+          ? col.filterOptions(row)
+          : String((row as any)[col.key] ?? "");
+        if (val) set.add(val);
+      }
+      opts[col.key] = Array.from(set).sort();
+    }
+    return opts;
+  }, [data, columns]);
 
   const filtered = useMemo(() => {
-    if (!search) return data;
-    const q = search.toLowerCase();
-    return data.filter((row) =>
-      searchKeys.some((k) =>
-        String(row[k] ?? "")
-          .toLowerCase()
-          .includes(q)
-      )
-    );
-  }, [data, search, searchKeys]);
+    let result = data;
+
+    // Apply text search
+    if (search) {
+      const q = search.toLowerCase();
+      result = result.filter((row) =>
+        searchKeys.some((k) =>
+          String(row[k] ?? "")
+            .toLowerCase()
+            .includes(q)
+        )
+      );
+    }
+
+    // Apply column filters
+    for (const [colKey, selectedValue] of Object.entries(columnFilters)) {
+      if (!selectedValue) continue;
+      const col = columns.find((c) => c.key === colKey);
+      if (!col) continue;
+      result = result.filter((row) => {
+        const val = col.filterOptions
+          ? col.filterOptions(row)
+          : String((row as any)[colKey] ?? "");
+        return val === selectedValue;
+      });
+    }
+
+    return result;
+  }, [data, search, searchKeys, columnFilters, columns]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const pageData = filtered.slice(page * pageSize, (page + 1) * pageSize);
+
+  // Reset page when filters change
+  const handleFilterChange = (colKey: string, value: string) => {
+    setColumnFilters((prev) => ({ ...prev, [colKey]: value }));
+    setPage(0);
+  };
+
+  const clearAllFilters = () => {
+    setColumnFilters({});
+    setSearch("");
+    setPage(0);
+  };
+
+  const hasActiveFilters =
+    search !== "" || Object.values(columnFilters).some((v) => v);
+
+  // Helper: center-align class (default true)
+  const getCellClass = (col: Column<T>) => {
+    const center = col.center !== false; // default true
+    return `${center ? "text-center" : ""} ${col.className || ""}`.trim();
+  };
 
   return (
     <Card>
@@ -86,20 +158,65 @@ export function DataTable<T extends { id?: string }>({
             </Button>
           )}
         </div>
-        {searchKeys.length > 0 && (
-          <div className="relative max-w-sm">
-            <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <Input
-              placeholder="جستجو..."
-              value={search}
-              onChange={(e) => {
-                setSearch(e.target.value);
-                setPage(0);
-              }}
-              className="pr-9"
-            />
-          </div>
-        )}
+
+        {/* Search + column filters row */}
+        <div className="flex items-center gap-2 flex-wrap">
+          {searchKeys.length > 0 && (
+            <div className="relative max-w-sm flex-1 min-w-[200px]">
+              <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Input
+                placeholder="جستجو..."
+                value={search}
+                onChange={(e) => {
+                  setSearch(e.target.value);
+                  setPage(0);
+                }}
+                className="pr-9"
+              />
+            </div>
+          )}
+
+          {/* Per-column dropdown filters */}
+          {columns
+            .filter((c) => c.filterable)
+            .map((col) => (
+              <Select
+                key={col.key}
+                value={columnFilters[col.key] || "__all__"}
+                onValueChange={(v) =>
+                  handleFilterChange(col.key, v === "__all__" ? "" : v)
+                }
+              >
+                <SelectTrigger className="w-[160px] h-9">
+                  <div className="flex items-center gap-1">
+                    <Filter className="w-3 h-3 text-muted-foreground" />
+                    <span className="text-xs">{col.label}:</span>
+                    <SelectValue placeholder="همه" />
+                  </div>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__all__">همه</SelectItem>
+                  {(filterOptions[col.key] || []).map((opt) => (
+                    <SelectItem key={opt} value={opt}>
+                      {opt}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ))}
+
+          {hasActiveFilters && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={clearAllFilters}
+              className="h-9 text-xs"
+            >
+              <X className="w-3 h-3 ml-1" />
+              پاک کردن فیلترها
+            </Button>
+          )}
+        </div>
       </CardHeader>
       <CardContent>
         <div className="rounded-md border overflow-hidden">
@@ -107,12 +224,15 @@ export function DataTable<T extends { id?: string }>({
             <TableHeader>
               <TableRow className="bg-muted/50">
                 {columns.map((c, idx) => (
-                  <TableHead key={`${c.key}-${idx}`} className={c.className}>
+                  <TableHead
+                    key={`${c.key}-${idx}`}
+                    className={`${getCellClass(c)} font-semibold`}
+                  >
                     {c.label}
                   </TableHead>
                 ))}
                 {(onView || onEdit || onDelete) && (
-                  <TableHead className="text-left w-32">عملیات</TableHead>
+                  <TableHead className="text-center w-32">عملیات</TableHead>
                 )}
               </TableRow>
             </TableHeader>
@@ -130,13 +250,16 @@ export function DataTable<T extends { id?: string }>({
                 pageData.map((row, i) => (
                   <TableRow key={row.id || i}>
                     {columns.map((c, idx) => (
-                      <TableCell key={`${c.key}-${idx}`} className={c.className}>
+                      <TableCell
+                        key={`${c.key}-${idx}`}
+                        className={getCellClass(c)}
+                      >
                         {c.render ? c.render(row) : String((row as any)[c.key] ?? "-")}
                       </TableCell>
                     ))}
                     {(onView || onEdit || onDelete) && (
-                      <TableCell className="text-left">
-                        <div className="flex items-center gap-1 justify-end">
+                      <TableCell className="text-center">
+                        <div className="flex items-center gap-1 justify-center">
                           {onView && (
                             <Button
                               size="icon"
@@ -182,7 +305,7 @@ export function DataTable<T extends { id?: string }>({
 
         {totalPages > 1 && (
           <div className="flex items-center justify-between mt-4">
-            <p className="text-xs text-muted-foreground">
+            <p className="text-xs text-muted-foreground text-center flex-1">
               نمایش {(page * pageSize + 1).toLocaleString("fa-IR")} تا{" "}
               {Math.min((page + 1) * pageSize, filtered.length).toLocaleString("fa-IR")}{" "}
               از {filtered.length.toLocaleString("fa-IR")} مورد

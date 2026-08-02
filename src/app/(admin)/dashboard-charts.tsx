@@ -1,7 +1,10 @@
 "use client";
+import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   AreaChart,
@@ -27,9 +30,12 @@ import {
   AlertCircle,
   Flame,
   ShieldAlert,
+  Calendar,
+  Search,
 } from "lucide-react";
 import { ElectricBorder, ELECTRIC_PRESETS } from "@/components/modern/electric-border";
 import { useModernMode } from "@/components/modern/modern-mode-provider";
+import { getTodayJalaliLong } from "@/lib/actual-progress-distribution";
 
 // =================================================================
 // Types
@@ -435,9 +441,33 @@ export function TopItemsList({
 
 // =================================================================
 // 4) RecentTable — full-width recent activities table
+//    With per-column filtering + centered alignment
 // =================================================================
 export function RecentTable({ items }: { items: RecentItem[] }) {
   const { isModern } = useModernMode();
+  const [statusFilter, setStatusFilter] = useState<string>("");
+  const [typeFilter, setTypeFilter] = useState<string>("");
+  const [search, setSearch] = useState("");
+
+  // Apply filters
+  const filtered = items.filter((item) => {
+    if (search) {
+      const q = search.toLowerCase();
+      if (
+        !item.title.toLowerCase().includes(q) &&
+        !item.code.toLowerCase().includes(q) &&
+        !(item.assigneeName || "").toLowerCase().includes(q)
+      ) {
+        return false;
+      }
+    }
+    if (statusFilter && item.status !== statusFilter) return false;
+    if (typeFilter && item.type !== typeFilter) return false;
+    return true;
+  });
+
+  const hasFilters = search || statusFilter || typeFilter;
+
   const card = (
     <Card className="elevated-card surface-tint-1">
       <CardHeader>
@@ -446,63 +476,113 @@ export function RecentTable({ items }: { items: RecentItem[] }) {
           آخرین فعالیت‌ها
         </CardTitle>
         <p className="text-xs text-muted-foreground">
-          ۱۰ فعالیت آخر به‌روزرسانی شده در سامانه (PMS و جاری)
+          {filtered.length.toLocaleString("fa-IR")} فعالیت — فیلتر بر اساس ستون‌ها
         </p>
+
+        {/* Filter controls */}
+        <div className="flex items-center gap-2 flex-wrap mt-2">
+          <div className="relative max-w-xs flex-1 min-w-[180px]">
+            <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+            <Input
+              placeholder="جستجو در عنوان، کد، مسئول..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pr-9 h-9 text-xs"
+            />
+          </div>
+          <select
+            value={typeFilter}
+            onChange={(e) => setTypeFilter(e.target.value)}
+            className="h-9 px-3 rounded-md border bg-background text-xs"
+          >
+            <option value="">همه انواع</option>
+            <option value="pms">PMS</option>
+            <option value="activity">جاری</option>
+          </select>
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className="h-9 px-3 rounded-md border bg-background text-xs"
+          >
+            <option value="">همه وضعیت‌ها</option>
+            <option value="pending">در انتظار</option>
+            <option value="in_progress">در حال انجام</option>
+            <option value="completed">تکمیل</option>
+            <option value="on_hold">متوقف</option>
+          </select>
+          {hasFilters && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setSearch("");
+                setStatusFilter("");
+                setTypeFilter("");
+              }}
+              className="h-9 text-xs"
+            >
+              پاک کردن
+            </Button>
+          )}
+        </div>
       </CardHeader>
       <CardContent className="p-0">
-        {items.length === 0 ? (
+        {filtered.length === 0 ? (
           <div className="p-8 text-center text-sm text-muted-foreground">
-            هنوز فعالیتی ثبت نشده است
+            {hasFilters ? "موردی با این فیلترها یافت نشد" : "هنوز فعالیتی ثبت نشده است"}
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-muted/50 border-y">
                 <tr>
-                  <th className="text-right font-semibold p-3 text-xs text-muted-foreground">عنوان</th>
-                  <th className="text-right font-semibold p-3 text-xs text-muted-foreground w-32">وضعیت</th>
-                  <th className="text-right font-semibold p-3 text-xs text-muted-foreground w-40">مسئول</th>
-                  <th className="text-right font-semibold p-3 text-xs text-muted-foreground w-32">تاریخ</th>
-                  <th className="text-right font-semibold p-3 text-xs text-muted-foreground w-32">پیشرفت</th>
+                  <th className="text-center font-semibold p-3 text-xs text-muted-foreground">عنوان</th>
+                  <th className="text-center font-semibold p-3 text-xs text-muted-foreground w-32">نوع</th>
+                  <th className="text-center font-semibold p-3 text-xs text-muted-foreground w-32">وضعیت</th>
+                  <th className="text-center font-semibold p-3 text-xs text-muted-foreground w-40">مسئول</th>
+                  <th className="text-center font-semibold p-3 text-xs text-muted-foreground w-32">تاریخ</th>
+                  <th className="text-center font-semibold p-3 text-xs text-muted-foreground w-32">پیشرفت</th>
                 </tr>
               </thead>
               <tbody>
-                {items.slice(0, 10).map((item, idx) => {
+                {filtered.slice(0, 10).map((item, idx) => {
                   const st = statusMap[item.status] || { label: item.status, variant: "outline" as const };
                   return (
                     <tr
                       key={`${item.type}-${item.id}`}
                       className={idx % 2 === 0 ? "" : "bg-muted/20"}
                     >
-                      <td className="p-3">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <Badge
-                            variant={item.type === "pms" ? "default" : "secondary"}
-                            className="text-[10px] shrink-0"
-                          >
-                            {item.type === "pms" ? "PMS" : "جاری"}
-                          </Badge>
+                      <td className="p-3 text-center">
+                        <div className="flex items-center gap-2 justify-center min-w-0">
                           <span className="font-mono text-[11px] text-muted-foreground shrink-0">
                             {item.code}
                           </span>
                           <span className="font-medium truncate">{item.title}</span>
                         </div>
                       </td>
-                      <td className="p-3">
+                      <td className="p-3 text-center">
+                        <Badge
+                          variant={item.type === "pms" ? "default" : "secondary"}
+                          className="text-[10px]"
+                        >
+                          {item.type === "pms" ? "PMS" : "جاری"}
+                        </Badge>
+                      </td>
+                      <td className="p-3 text-center">
                         <Badge variant={st.variant} className="text-xs">
                           {st.label}
                         </Badge>
                       </td>
-                      <td className="p-3 text-xs text-muted-foreground">
+                      <td className="p-3 text-xs text-muted-foreground text-center">
                         {item.assigneeName || "—"}
                       </td>
-                      <td className="p-3 text-xs text-muted-foreground font-num">
+                      <td className="p-3 text-xs text-muted-foreground font-num text-center">
                         {formatDate(item.updatedAt)}
                       </td>
                       <td className="p-3">
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 justify-center">
                           <Progress value={item.progressPct || 0} className="h-1.5 flex-1" />
-                          <span className="text-xs font-bold font-num shrink-0 w-8 text-left">
+                          <span className="text-xs font-bold font-num shrink-0 w-8 text-center">
                             {Math.round(item.progressPct || 0).toLocaleString("fa-IR")}%
                           </span>
                         </div>
@@ -964,28 +1044,36 @@ export function DashboardCharts({ data }: { data: DashboardData }) {
   return (
     <div className="space-y-6">
       {/* ===== Row 1: Header ===== */}
-      <div>
-        <h1 className="text-2xl font-bold">داشبورد</h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          نمای کلی عملکرد سازمان — فعالیت‌ها، مالی، پرسنل، موضوعات استراتژیک و ریسک
-        </p>
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <h1 className="text-2xl font-bold">داشبورد</h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            نمای کلی عملکرد سازمان — فعالیت‌ها، مالی، پرسنل، موضوعات استراتژیک و ریسک
+          </p>
+        </div>
+        {/* Today's date (Shamsi) */}
+        <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-muted/50 border text-sm">
+          <Calendar className="w-4 h-4 text-primary" />
+          <span className="font-medium">{getTodayJalaliLong()}</span>
+        </div>
       </div>
 
       {/* ===== Row 2: 4 KPI Cards ===== */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 stagger-children">
         <StatCard
-          label="تعداد پرسنل"
+          label="تعداد کاربران"
           value={stats.personelCount.toLocaleString("fa-IR")}
           icon={Users}
           color="bg-gradient-to-br from-emerald-500 to-teal-600"
           preset="hr"
         />
         <StatCard
-          label="پروژه‌های فعال (PMS)"
-          value={stats.wbsCount.toLocaleString("fa-IR")}
-          icon={Network}
-          color="bg-gradient-to-br from-blue-500 to-indigo-600"
-          preset="project"
+          label="هزینه کل (پیش‌بینی برنامه‌ای)"
+          value={formatAmountCompact(financial.totalCost || 0)}
+          icon={DollarSign}
+          color="bg-gradient-to-br from-rose-500 to-red-600"
+          preset="kpi"
+          suffix={financial.totalCost >= 1000 ? "(میلیارد تومان)" : "(میلیون تومان)"}
         />
         <StatCard
           label="درآمد کل (پیش‌بینی برنامه‌ای)"
@@ -999,8 +1087,8 @@ export function DashboardCharts({ data }: { data: DashboardData }) {
           label="ریسک‌های باز"
           value={stats.openRiskCount.toLocaleString("fa-IR")}
           icon={AlertTriangle}
-          color="bg-gradient-to-br from-rose-500 to-red-600"
-          preset="kpi"
+          color="bg-gradient-to-br from-violet-500 to-purple-600"
+          preset="project"
         />
       </div>
 

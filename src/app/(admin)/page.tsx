@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { DashboardCharts, type DashboardData } from "./dashboard-charts";
+import { distributeActualProgress } from "@/lib/actual-progress-distribution";
 
 export const dynamic = "force-dynamic";
 
@@ -48,7 +49,7 @@ function parseIdArray(json: string | null): string[] {
 async function fetchDashboardData(): Promise<DashboardData> {
   const [
     wbsCount,
-    personelCount,
+    userCount,
     assetCount,
     openRiskCount,
     rootWbs,
@@ -64,7 +65,7 @@ async function fetchDashboardData(): Promise<DashboardData> {
     revenueRows,
   ] = await Promise.all([
     db.wBS.count(),
-    db.personel.count(),
+    db.user.count(),
     db.asset.count(),
     db.risk.count({ where: { status: { in: ["open", "in_progress", "mitigating"] } } }),
     db.wBS.findFirst({ where: { level: 1 }, orderBy: { wbsCode: "asc" } }),
@@ -397,19 +398,34 @@ async function fetchDashboardData(): Promise<DashboardData> {
 
   const closedCount = risks.filter((r) => r.status === "closed").length;
 
+  // Apply actual progress distribution to root S-curve.
+  // This distributes the current overall actual progress across the time
+  // axis (monthly intervals) so we get a realistic "actual" curve even
+  // when only the current percentage is known.
+  const rootScurveDistributed = distributeActualProgress(
+    rootMonthlyProgress.map((m) => ({
+      monthDate: m.monthDate.toISOString(),
+      plannedPct: m.plannedPct,
+      actualPct: m.actualPct,
+    })),
+    rootWbs?.progressActual || 0
+  );
+
+  // Apply the same distribution to each strategic topic S-curve
+  const strategicTopicsDistributed = strategicTopics.map((t) => ({
+    ...t,
+    scurve: distributeActualProgress(t.scurve, t.progress || 0),
+  }));
+
   return {
     stats: {
       wbsCount,
-      personelCount,
+      personelCount: userCount, // Now shows user count, not personnel count
       assetCount,
       openRiskCount,
     },
     pms: {
-      rootScurve: rootMonthlyProgress.map((m) => ({
-        monthDate: m.monthDate.toISOString(),
-        plannedPct: m.plannedPct,
-        actualPct: m.actualPct,
-      })),
+      rootScurve: rootScurveDistributed,
       rootProgress: rootWbs?.progressActual || 0,
       rootPlan: rootWbs?.progressPlan || 0,
     },
@@ -421,7 +437,7 @@ async function fetchDashboardData(): Promise<DashboardData> {
     },
     recentItems,
     personnelStats,
-    strategicTopics,
+    strategicTopics: strategicTopicsDistributed,
     risk: {
       total: risks.length,
       openCount: openRiskCount,

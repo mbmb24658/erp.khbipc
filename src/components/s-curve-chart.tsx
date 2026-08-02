@@ -1,5 +1,6 @@
 "use client";
 import { LineChart, Line, ResponsiveContainer, YAxis, XAxis } from "recharts";
+import { distributeActualProgress } from "@/lib/actual-progress-distribution";
 
 interface MonthlyProgress {
   monthDate: string;
@@ -11,17 +12,18 @@ interface SCurveChartProps {
   data: MonthlyProgress[];
   // Optional: the overall actual progress (0-1) of the root WBS.
   // If provided, the actual curve will be computed by distributing this value
-  // linearly from 0 across all months up to today.
+  // across the time axis (monthly intervals) up to today.
   overallActual?: number;
 }
 
-// S-curve chart showing plan vs actual progress, no labels/title/legend
-// per user request — just the curves.
+// S-curve chart showing plan vs actual progress.
 //
-// Improvements:
-// - Actual line starts from (0, 0)
-// - Both lines stop at today's date (no future data points)
-// - At today's date, the actual percentage is displayed as a marker
+// Uses distributeActualProgress() to compute the actual curve when only
+// the current overall percentage is known. The actual line:
+//   - Starts at (0, 0)
+//   - Ends at (today, overallActual)
+//   - Is distributed proportionally across past months based on elapsed time
+//   - Future months get null (not yet achieved)
 export function SCurveChart({ data, overallActual }: SCurveChartProps) {
   if (!data || data.length === 0) {
     return (
@@ -31,54 +33,27 @@ export function SCurveChart({ data, overallActual }: SCurveChartProps) {
     );
   }
 
+  // If overallActual is provided, distribute it across the time axis
+  const processedData =
+    overallActual !== undefined && overallActual !== null
+      ? distributeActualProgress(data, overallActual)
+      : data;
+
   // Convert to display format - sort by date
-  const sorted = [...data].sort(
+  const sorted = [...processedData].sort(
     (a, b) => new Date(a.monthDate).getTime() - new Date(b.monthDate).getTime()
   );
 
-  // Determine "today" to know how far the actual curve should extend
-  const now = new Date();
-
-  // Build chart data:
-  // - Always start with point at index 0 = (0, 0) for both plan and actual
-  // - For each month up to today:
-  //   - plan: cumulative plannedPct
-  //   - actual: if explicit actualPct, use it; otherwise interpolate from 0 to overallActual
+  // Build chart data
   const chartData: { idx: number; plan: number; actual: number | null }[] = [];
-
-  // Start point at (0, 0)
   chartData.push({ idx: 0, plan: 0, actual: 0 });
 
-  const firstDate = new Date(sorted[0].monthDate);
-  const lastDate = new Date(sorted[sorted.length - 1].monthDate);
-  const totalSpan = lastDate.getTime() - firstDate.getTime();
-
   sorted.forEach((d, i) => {
-    const monthDate = new Date(d.monthDate);
-    const plan = Math.round((d.plannedPct ?? 0) * 1000) / 10; // 0-100 with 1 decimal
-
-    // Compute actual: if we have explicit actualPct use it, otherwise interpolate
-    let actual: number | null = null;
-    if (d.actualPct !== null && d.actualPct !== undefined) {
-      actual = Math.round(d.actualPct * 1000) / 10;
-    } else if (overallActual !== undefined && overallActual !== null) {
-      // Interpolate: distribute overallActual linearly from 0 across all months to today
-      const elapsed = monthDate.getTime() - firstDate.getTime();
-
-      if (monthDate <= now) {
-        if (totalSpan <= 0) {
-          actual = Math.round(overallActual * 1000) / 10;
-        } else {
-          // Linear interpolation from 0 to overallActual
-          const fraction = Math.min(1, Math.max(0, elapsed / totalSpan));
-          actual = Math.round(overallActual * fraction * 1000) / 10;
-        }
-      } else {
-        // Future month - actual is null (hasn't happened yet)
-        actual = null;
-      }
-    }
-
+    const plan = Math.round((d.plannedPct ?? 0) * 1000) / 10;
+    const actual =
+      d.actualPct !== null && d.actualPct !== undefined
+        ? Math.round(d.actualPct * 1000) / 10
+        : null;
     chartData.push({ idx: i + 1, plan, actual });
   });
 

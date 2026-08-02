@@ -18,7 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Search, Plus, Pencil, Trash2, Eye, ArrowRight, ArrowLeft, Filter, X } from "lucide-react";
+import { Search, Plus, Pencil, Trash2, Eye, ArrowRight, ArrowLeft, Filter, X, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
 import { useState, useMemo, ReactNode } from "react";
 
 export interface Column<T> {
@@ -33,6 +33,8 @@ export interface Column<T> {
   filterOptions?: (row: T) => string;
   // Center-align this column (default: true for all columns now)
   center?: boolean;
+  // Custom sort value extractor (defaults to row[key])
+  sortValue?: (row: T) => string | number;
 }
 
 interface DataTableProps<T> {
@@ -68,6 +70,8 @@ export function DataTable<T extends { id?: string }>({
   const [page, setPage] = useState(0);
   // Per-column filter values: { columnKey: selectedValue }
   const [columnFilters, setColumnFilters] = useState<Record<string, string>>({});
+  // Sort state: { key, direction } where direction is "asc" | "desc" | null
+  const [sortState, setSortState] = useState<{ key: string; direction: "asc" | "desc" } | null>(null);
 
   // Compute unique values for each filterable column
   const filterOptions = useMemo(() => {
@@ -114,8 +118,34 @@ export function DataTable<T extends { id?: string }>({
       });
     }
 
+    // Apply sort
+    if (sortState) {
+      const col = columns.find((c) => c.key === sortState.key);
+      if (col) {
+        const getVal = (row: T): string | number => {
+          if (col.sortValue) return col.sortValue(row);
+          const v = (row as any)[col.key];
+          // Try numeric comparison if value looks numeric
+          if (typeof v === "number") return v;
+          if (typeof v === "string" && !isNaN(Number(v)) && v.trim() !== "") return Number(v);
+          return String(v ?? "");
+        };
+        result = [...result].sort((a, b) => {
+          const va = getVal(a);
+          const vb = getVal(b);
+          let cmp: number;
+          if (typeof va === "number" && typeof vb === "number") {
+            cmp = va - vb;
+          } else {
+            cmp = String(va).localeCompare(String(vb), "fa");
+          }
+          return sortState.direction === "asc" ? cmp : -cmp;
+        });
+      }
+    }
+
     return result;
-  }, [data, search, searchKeys, columnFilters, columns]);
+  }, [data, search, searchKeys, columnFilters, columns, sortState]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const pageData = filtered.slice(page * pageSize, (page + 1) * pageSize);
@@ -126,19 +156,46 @@ export function DataTable<T extends { id?: string }>({
     setPage(0);
   };
 
+  const handleSort = (colKey: string) => {
+    setSortState((prev) => {
+      if (!prev || prev.key !== colKey) {
+        return { key: colKey, direction: "asc" };
+      }
+      if (prev.direction === "asc") {
+        return { key: colKey, direction: "desc" };
+      }
+      // desc → clear sort
+      return null;
+    });
+    setPage(0);
+  };
+
   const clearAllFilters = () => {
     setColumnFilters({});
     setSearch("");
+    setSortState(null);
     setPage(0);
   };
 
   const hasActiveFilters =
-    search !== "" || Object.values(columnFilters).some((v) => v);
+    search !== "" || Object.values(columnFilters).some((v) => v) || sortState !== null;
 
   // Helper: center-align class (default true)
   const getCellClass = (col: Column<T>) => {
     const center = col.center !== false; // default true
     return `${center ? "text-center" : ""} ${col.className || ""}`.trim();
+  };
+
+  // Render sort icon for a column header
+  const renderSortIcon = (col: Column<T>) => {
+    if (!col.sortable) return null;
+    const isActive = sortState?.key === col.key;
+    if (!isActive) {
+      return <ArrowUpDown className="w-3 h-3 inline-block mr-1 opacity-40" />;
+    }
+    return sortState.direction === "asc"
+      ? <ArrowUp className="w-3 h-3 inline-block mr-1 text-primary" />
+      : <ArrowDown className="w-3 h-3 inline-block mr-1 text-primary" />;
   };
 
   return (
@@ -226,9 +283,11 @@ export function DataTable<T extends { id?: string }>({
                 {columns.map((c, idx) => (
                   <TableHead
                     key={`${c.key}-${idx}`}
-                    className={`${getCellClass(c)} font-semibold`}
+                    className={`${getCellClass(c)} font-semibold ${c.sortable ? "cursor-pointer hover:bg-muted/70 select-none" : ""}`}
+                    onClick={c.sortable ? () => handleSort(c.key) : undefined}
                   >
                     {c.label}
+                    {renderSortIcon(c)}
                   </TableHead>
                 ))}
                 {(onView || onEdit || onDelete) && (

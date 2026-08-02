@@ -36,10 +36,21 @@ export interface MonthlyPoint {
  *
  * Returns a NEW array where actualPct is computed by distributing
  * currentOverallActual across the time axis from the first month
- * to today. If a point already has actualPct set (e.g., from real
- * historical data), it is preserved.
+ * to today.
  *
- * Months after today get null (future).
+ * Algorithm (per user spec):
+ *   - Today is the "anchor" point: (today, currentOverallActual)
+ *   - Walk backwards in monthly intervals from today to the first month.
+ *   - At each past month, the actual progress = currentOverallActual
+ *     multiplied by (days elapsed from that month to start) /
+ *     (days from today to start). This produces a monotonically
+ *     increasing curve from 0 → currentOverallActual.
+ *   - Months after today get null (future, not yet achieved).
+ *
+ * NOTE: This ALWAYS overwrites actualPct with the distributed value.
+ * The currentOverallActual (read from WBS.progressActual) is the
+ * source of truth — it's the value shown on the "پیشرفت واقعی" card
+ * on each WBS detail page.
  */
 export function distributeActualProgress(
   planned: MonthlyPoint[],
@@ -56,20 +67,12 @@ export function distributeActualProgress(
   const firstDate = new Date(sorted[0].monthDate);
   const lastDate = new Date(sorted[sorted.length - 1].monthDate);
 
-  // Total span (in ms) from first planned month to last planned month
-  const totalSpan = lastDate.getTime() - firstDate.getTime();
-
   // Anchor: today, but clamped to [firstDate, lastDate]
   const anchorDate = now > lastDate ? lastDate : now < firstDate ? firstDate : now;
+  // Time elapsed from first planned month to anchor (today or clamped)
   const anchorElapsed = anchorDate.getTime() - firstDate.getTime();
-  const anchorFraction = totalSpan > 0 ? Math.min(1, Math.max(0, anchorElapsed / totalSpan)) : 1;
 
   return sorted.map((p) => {
-    // Preserve existing actualPct if it's already set (from real history)
-    if (p.actualPct !== null && p.actualPct !== undefined) {
-      return p;
-    }
-
     const monthDate = new Date(p.monthDate);
 
     // Future month: actual is null (not yet achieved)
@@ -78,20 +81,19 @@ export function distributeActualProgress(
     }
 
     // Compute the fraction of time elapsed from firstDate to this month,
-    // relative to the anchor (today or clamped date).
+    // relative to the anchor (today).
     const elapsed = monthDate.getTime() - firstDate.getTime();
     let fraction: number;
     if (anchorElapsed <= 0) {
       // Anchor is at or before firstDate — only this point gets the full value
       fraction = monthDate.getTime() >= anchorDate.getTime() ? 1 : 0;
     } else {
+      // Linear: 0 at firstDate, 1 at anchorDate
       fraction = Math.min(1, Math.max(0, elapsed / anchorElapsed));
     }
 
-    // Scale by anchorFraction so the curve reaches currentOverallActual
-    // exactly at the anchor date.
-    const scaledFraction = fraction * anchorFraction;
-    const actualPct = currentOverallActual * scaledFraction;
+    // Scale currentOverallActual by the fraction
+    const actualPct = currentOverallActual * fraction;
 
     // Round to 4 decimal places to avoid floating-point noise
     const rounded = Math.round(actualPct * 10000) / 10000;

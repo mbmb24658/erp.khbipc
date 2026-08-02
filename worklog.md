@@ -362,6 +362,65 @@ Stage Summary:
 6. **تاریخ شمسی**: در هدر بالا (sticky) + در هدر داشبورد
 
 
+---
+Task ID: 7
+Agent: main
+Task: اصلاحات: پیشرفت واقعی از WBS، نمودار دوطرفه هزینه/درآمد، قابلیت sort جداول
+
+Work Log:
+- اصلاح توزیع پیشرفت واقعی در `src/lib/actual-progress-distribution.ts`:
+  * حذف logic «preserve existing actualPct» که باعث می‌شد اعداد اشتباه نمایش داده شوند
+  * حالا همیشه actualPct را از currentOverallActual (که از WBS.progressActual خوانده می‌شود) توزیع می‌کند
+  * الگوریتم: actualPct در هر نقطه = currentOverallActual × (روزهای گذشته از مبدا تا این نقطه / روزهای گذشته از مبدا تا امروز)
+  * نقطه امروز = (today, currentOverallActual) — دقیقاً مطابق کارت «پیشرفت واقعی» در صفحه جزئیات WBS
+  * نقاط آینده = null
+  * currentOverallActual از `rootWbs.progressActual` (سطح ۱) و `w.progressActual` (سطح ۲) خوانده می‌شود
+
+- ساخت کامپوننت `RevenueCostChart` در `dashboard-charts.tsx`:
+  * نمودار دوطرفه (diverging bar chart)
+  * بخش بالا: ۵ دسته‌ی پردرآمد (سبز، Progress bar از راست)
+  * بخش پایین: ۵ دسته‌ی پرهزینه (قرمز، Progress bar از چپ)
+  * مرتب‌سازی نزولی در هر دسته (بیشترین → کمترین)
+  * نمایش مبلغ با formatAmount (میلیون/میلیارد تومان)
+  * علامت منفی برای هزینه‌ها
+
+- به‌روزرسانی `src/app/(admin)/page.tsx`:
+  * کوئری `db.costBreakdown.findMany` برای دریافت ردیف‌های هزینه
+  * تجمیع costByCategory (گروه‌بندی بر اساس category/description/theme)
+  * مرتب‌سازی نزولی و گرفتن ۱۰ مورد برتر
+  * جایگزینی TopItemsList با RevenueCostChart در داشبورد
+
+- افزودن قابلیت sort به `src/components/data-table.tsx`:
+  * `sortState` در state: `{ key, direction } | null`
+  * کلیک روی ستون sortable: asc → desc → clear
+  * آیکون‌های sort: ArrowUpDown (غیرفعال)، ArrowUp (صعودی)، ArrowDown (نزولی)
+  * پشتیبانی از sortValue سفارشی در Column interface
+  * تشخیص خودکار عدد vs string (با localeCompare فارسی)
+  * cursor-pointer + hover highlight روی ستون‌های sortable
+
+- افزودن قابلیت sort به RecentTable در `dashboard-charts.tsx`:
+  * ۵ ستون sortable: عنوان، وضعیت، مسئول، تاریخ، پیشرفت
+  * آیکون‌های ▲/▼/↕
+  * کلیک: asc → desc → clear
+  * دکمه «پاک کردن» شامل sort reset
+
+Stage Summary:
+- ۴ فایل اصلاح شد:
+  * actual-progress-distribution.ts (رفع bug توزیع پیشرفت)
+  * dashboard-charts.tsx (RevenueCostChart + sort در RecentTable)
+  * page.tsx (کوئری costBreakdown + تجمیع)
+  * data-table.tsx (قابلیت sort)
+- Build موفق با `npx next build`
+- TypeScript type-check تمیز
+
+تغییرات کلیدی:
+1. **پیشرفت واقعی**: حالا از WBS.progressActual خوانده می‌شود (مطابق کارت «پیشرفت واقعی» در صفحه WBS)
+2. **نمودار دوطرفه**: ۵ پردرآمد (سبز، راست) + ۵ پرهزینه (قرمز، چپ)
+3. **Sort جداول**: همه‌ی جداول DataTable + RecentTable قابل sort هستند
+4. **آیکون‌های sort**: ↕ (غیرفعال)، ▲ (صعودی)، ▼ (نزولی)
+
+
+
 
 
 

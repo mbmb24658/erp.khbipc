@@ -440,6 +440,137 @@ export function TopItemsList({
 }
 
 // =================================================================
+// 3b) RevenueCostChart — diverging bar chart (revenue +, cost -)
+// Shows top 5 revenue (green, right) and top 5 cost (red, left)
+// Sorted by absolute value within each category
+// =================================================================
+export function RevenueCostChart({
+  revenues,
+  costs,
+}: {
+  revenues: TopItem[];
+  costs: TopItem[];
+}) {
+  const { isModern } = useModernMode();
+
+  // Top 5 by value (descending) in each category
+  const topRev = (revenues || [])
+    .slice()
+    .sort((a, b) => (b.value || 0) - (a.value || 0))
+    .slice(0, 5);
+  const topCost = (costs || [])
+    .slice()
+    .sort((a, b) => (b.value || 0) - (a.value || 0))
+    .slice(0, 5);
+
+  // Combined list with sign (revenue +, cost -)
+  const allItems = [
+    ...topRev.map((r) => ({ name: r.name, value: r.value || 0, type: "rev" as const })),
+    ...topCost.map((c) => ({ name: c.name, value: -(c.value || 0), type: "cost" as const })),
+  ];
+
+  // Sort: revenues descending (largest first), then costs ascending (most negative last)
+  // Display order: top revenue first, then top cost (mirrored)
+  const sortedRev = topRev.slice().sort((a, b) => (b.value || 0) - (a.value || 0));
+  const sortedCost = topCost.slice().sort((a, b) => (b.value || 0) - (a.value || 0));
+
+  // Max absolute value for scaling
+  const allValues = [...topRev, ...topCost].map((i) => i.value || 0);
+  const maxAbs = allValues.length > 0 ? Math.max(...allValues) : 0;
+
+  const card = (
+    <Card className="h-full elevated-card surface-tint-1">
+      <CardHeader>
+        <CardTitle className="text-base flex items-center gap-2">
+          <DollarSign className="w-4 h-4 text-primary" />
+          درآمد و هزینه برتر
+        </CardTitle>
+        <p className="text-xs text-muted-foreground">
+          ۵ دسته‌ی پردرآمد (سبز، راست) و ۵ دسته‌ی پرهزینه (قرمز، چپ)
+        </p>
+      </CardHeader>
+      <CardContent>
+        {topRev.length === 0 && topCost.length === 0 ? (
+          <div className="h-72 flex items-center justify-center text-sm text-muted-foreground">
+            داده‌ای موجود نیست
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {/* Revenue section (green, right-aligned) */}
+            <div className="space-y-2">
+              <p className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
+                پردرآمدترین
+              </p>
+              {sortedRev.map((item, idx) => {
+                const pct = maxAbs > 0 ? Math.round(((item.value || 0) / maxAbs) * 100) : 0;
+                return (
+                  <div key={`rev-${idx}`} className="space-y-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-bold font-num text-emerald-600 dark:text-emerald-400 shrink-0">
+                        {formatAmount(item.value || 0)}
+                      </span>
+                      <span className="text-[11px] font-medium truncate text-right">
+                        {item.name}
+                      </span>
+                    </div>
+                    {/* Progress bar grows from RIGHT (RTL: mr-0, ml-auto) */}
+                    <div className="relative h-2 bg-muted/30 rounded-full overflow-hidden">
+                      <div
+                        className="absolute top-0 bottom-0 right-0 bg-emerald-500 rounded-full"
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Divider */}
+            <div className="border-t border-border/50" />
+
+            {/* Cost section (red, left-aligned) */}
+            <div className="space-y-2">
+              <p className="text-[10px] font-semibold text-rose-600 dark:text-rose-400">
+                پرهزینه‌ترین
+              </p>
+              {sortedCost.map((item, idx) => {
+                const pct = maxAbs > 0 ? Math.round(((item.value || 0) / maxAbs) * 100) : 0;
+                return (
+                  <div key={`cost-${idx}`} className="space-y-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[11px] font-medium truncate">
+                        {item.name}
+                      </span>
+                      <span className="text-xs font-bold font-num text-rose-600 dark:text-rose-400 shrink-0">
+                        -{formatAmount(item.value || 0)}
+                      </span>
+                    </div>
+                    {/* Progress bar grows from LEFT (mirrored) */}
+                    <div className="relative h-2 bg-muted/30 rounded-full overflow-hidden">
+                      <div
+                        className="absolute top-0 bottom-0 left-0 bg-rose-500 rounded-full"
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+
+  if (!isModern) return card;
+  return (
+    <ElectricBorder enabled {...ELECTRIC_PRESETS.financial}>
+      {card}
+    </ElectricBorder>
+  );
+}
+
+// =================================================================
 // 4) RecentTable — full-width recent activities table
 //    With per-column filtering + centered alignment
 // =================================================================
@@ -448,9 +579,11 @@ export function RecentTable({ items }: { items: RecentItem[] }) {
   const [statusFilter, setStatusFilter] = useState<string>("");
   const [typeFilter, setTypeFilter] = useState<string>("");
   const [search, setSearch] = useState("");
+  const [sortKey, setSortKey] = useState<string | null>(null);
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
 
   // Apply filters
-  const filtered = items.filter((item) => {
+  let filtered = items.filter((item) => {
     if (search) {
       const q = search.toLowerCase();
       if (
@@ -466,7 +599,65 @@ export function RecentTable({ items }: { items: RecentItem[] }) {
     return true;
   });
 
-  const hasFilters = search || statusFilter || typeFilter;
+  // Apply sort
+  if (sortKey) {
+    filtered = [...filtered].sort((a, b) => {
+      let va: any, vb: any;
+      switch (sortKey) {
+        case "title":
+          va = a.title; vb = b.title;
+          break;
+        case "code":
+          va = a.code; vb = b.code;
+          break;
+        case "status":
+          va = a.status; vb = b.status;
+          break;
+        case "assignee":
+          va = a.assigneeName || ""; vb = b.assigneeName || "";
+          break;
+        case "date":
+          va = new Date(a.updatedAt).getTime();
+          vb = new Date(b.updatedAt).getTime();
+          break;
+        case "progress":
+          va = a.progressPct || 0; vb = b.progressPct || 0;
+          break;
+        default:
+          return 0;
+      }
+      let cmp: number;
+      if (typeof va === "number" && typeof vb === "number") {
+        cmp = va - vb;
+      } else {
+        cmp = String(va).localeCompare(String(vb), "fa");
+      }
+      return sortDir === "asc" ? cmp : -cmp;
+    });
+  }
+
+  const hasFilters = search || statusFilter || typeFilter || sortKey;
+
+  const handleSort = (key: string) => {
+    if (sortKey === key) {
+      if (sortDir === "asc") {
+        setSortDir("desc");
+      } else {
+        setSortKey(null);
+        setSortDir("asc");
+      }
+    } else {
+      setSortKey(key);
+      setSortDir("asc");
+    }
+  };
+
+  const renderSortIcon = (key: string) => {
+    if (sortKey !== key) return <span className="opacity-30 text-[10px]">↕</span>;
+    return sortDir === "asc"
+      ? <span className="text-primary text-[10px]">▲</span>
+      : <span className="text-primary text-[10px]">▼</span>;
+  };
 
   const card = (
     <Card className="elevated-card surface-tint-1">
@@ -518,6 +709,8 @@ export function RecentTable({ items }: { items: RecentItem[] }) {
                 setSearch("");
                 setStatusFilter("");
                 setTypeFilter("");
+                setSortKey(null);
+                setSortDir("asc");
               }}
               className="h-9 text-xs"
             >
@@ -536,12 +729,37 @@ export function RecentTable({ items }: { items: RecentItem[] }) {
             <table className="w-full text-sm">
               <thead className="bg-muted/50 border-y">
                 <tr>
-                  <th className="text-center font-semibold p-3 text-xs text-muted-foreground">عنوان</th>
+                  <th
+                    className="text-center font-semibold p-3 text-xs text-muted-foreground cursor-pointer hover:bg-muted/70 select-none"
+                    onClick={() => handleSort("title")}
+                  >
+                    عنوان {renderSortIcon("title")}
+                  </th>
                   <th className="text-center font-semibold p-3 text-xs text-muted-foreground w-32">نوع</th>
-                  <th className="text-center font-semibold p-3 text-xs text-muted-foreground w-32">وضعیت</th>
-                  <th className="text-center font-semibold p-3 text-xs text-muted-foreground w-40">مسئول</th>
-                  <th className="text-center font-semibold p-3 text-xs text-muted-foreground w-32">تاریخ</th>
-                  <th className="text-center font-semibold p-3 text-xs text-muted-foreground w-32">پیشرفت</th>
+                  <th
+                    className="text-center font-semibold p-3 text-xs text-muted-foreground w-32 cursor-pointer hover:bg-muted/70 select-none"
+                    onClick={() => handleSort("status")}
+                  >
+                    وضعیت {renderSortIcon("status")}
+                  </th>
+                  <th
+                    className="text-center font-semibold p-3 text-xs text-muted-foreground w-40 cursor-pointer hover:bg-muted/70 select-none"
+                    onClick={() => handleSort("assignee")}
+                  >
+                    مسئول {renderSortIcon("assignee")}
+                  </th>
+                  <th
+                    className="text-center font-semibold p-3 text-xs text-muted-foreground w-32 cursor-pointer hover:bg-muted/70 select-none"
+                    onClick={() => handleSort("date")}
+                  >
+                    تاریخ {renderSortIcon("date")}
+                  </th>
+                  <th
+                    className="text-center font-semibold p-3 text-xs text-muted-foreground w-32 cursor-pointer hover:bg-muted/70 select-none"
+                    onClick={() => handleSort("progress")}
+                  >
+                    پیشرفت {renderSortIcon("progress")}
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -1092,7 +1310,7 @@ export function DashboardCharts({ data }: { data: DashboardData }) {
         />
       </div>
 
-      {/* ===== Row 3: Trend chart (2/3) + Top revenue assets (1/3) ===== */}
+      {/* ===== Row 3: Trend chart (2/3) + Revenue vs Cost chart (1/3) ===== */}
       <div className="grid gap-4 lg:grid-cols-3">
         <div className="lg:col-span-2">
           <TrendChart
@@ -1102,11 +1320,9 @@ export function DashboardCharts({ data }: { data: DashboardData }) {
           />
         </div>
         <div className="lg:col-span-1">
-          <TopItemsList
-            items={financial.topAssets}
-            title="پردرآمدترین دارایی‌ها"
-            subtitle="۵ دارایی برتر بر اساس درآمد پیش‌بینی‌شده"
-            emptyLabel="دارایی‌ای با درآمد ثبت نشده است"
+          <RevenueCostChart
+            revenues={financial.topAssets}
+            costs={financial.costByCategory}
           />
         </div>
       </div>

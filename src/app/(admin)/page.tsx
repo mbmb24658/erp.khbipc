@@ -185,8 +185,32 @@ async function fetchDashboardData(): Promise<DashboardData> {
     .sort((a, b) => b.value - a.value)
     .slice(0, 10);
 
-  // Also aggregate cost by category for fallback
-  const costByCategory: { name: string; value: number }[] = [];
+  // ===== Aggregate cost by category (top 10) =====
+  const costRows = await db.costBreakdown.findMany({
+    where: { programForecast: { gt: 0 } },
+    select: {
+      id: true,
+      programForecast: true,
+      category: true,
+      description: true,
+      theme: true,
+    },
+    take: 200,
+  });
+
+  const costMap = new Map<string, { name: string; value: number }>();
+  for (const c of costRows) {
+    const key = c.category || c.description || c.theme || "نامشخص";
+    const existing = costMap.get(key);
+    if (existing) {
+      existing.value += c.programForecast || 0;
+    } else {
+      costMap.set(key, { name: key, value: c.programForecast || 0 });
+    }
+  }
+  const costByCategory = Array.from(costMap.values())
+    .sort((a, b) => b.value - a.value)
+    .slice(0, 10);
 
   // ===== Recent items (merge activities + WBS) =====
   const activityItems = recentActivities.map((a) => ({
